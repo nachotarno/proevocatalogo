@@ -1,71 +1,128 @@
+from flask import Flask, render_template, request, send_file, abort
 import os
-import requests
-from flask import Flask, render_template, request, jsonify
-from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 
-# --- CONFIGURACIÓN ---
-API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
+UPLOAD = "static/uploads"
+PROCESSED = "static/processed"
 
-# Usamos rutas absolutas para evitar errores en servidores como Render
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
-PROCESSED_FOLDER = os.path.join(BASE_DIR, "static", "processed")
+os.makedirs(UPLOAD, exist_ok=True)
+os.makedirs(PROCESSED, exist_ok=True)
 
-# Asegurar que las carpetas existan al arrancar
-for folder in [UPLOAD_FOLDER, PROCESSED_FOLDER]:
-    if not os.path.exists(folder):
-        os.makedirs(folder, exist_ok=True)
 
-@app.route('/')
-def index():
-    imagenes = []
-    if os.path.exists(PROCESSED_FOLDER):
-        # Listar archivos y filtrar solo imágenes
-        archivos = [f for f in os.listdir(PROCESSED_FOLDER) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        # Ordenar por fecha de creación (los más nuevos primero)
-        archivos.sort(key=lambda x: os.path.getmtime(os.path.join(PROCESSED_FOLDER, x)), reverse=True)
-        imagenes = archivos
-    
-    return render_template('index.html', imagenes=imagenes)
+# 🧹 LIMPIAR IMÁGENES VIEJAS (opcional pero útil)
+def limpiar_procesados():
+    for file in os.listdir(PROCESSED):
+        path = os.path.join(PROCESSED, file)
+        try:
+            os.remove(path)
+        except:
+            pass
 
-@app.route('/remove-bg', methods=['POST'])
-def remove_bg():
-    if not API_KEY:
-        return jsonify({"error": "Configuración de API ausente"}), 500
 
-    file = request.files.get('file')
-    if not file or file.filename == '':
-        return jsonify({"error": "No se recibió archivo"}), 400
+# 🔥 PROCESAMIENTO PRO
+def procesar_imagen(imagen_path, output_path, nombre_archivo):
+    print("PROCESANDO:", nombre_archivo)
+
+    img = Image.open(imagen_path).convert("RGBA")
+
+    # --- LIENZO BLANCO ---
+    canvas_size = (800, 800)
+    fondo = Image.new("RGBA", canvas_size, (255, 255, 255, 255))
+
+    # --- AJUSTE TAMAÑO ---
+    img.thumbnail((600, 600), Image.LANCZOS)
+
+    # --- CENTRADO ---
+    x = (canvas_size[0] - img.width) // 2
+    y = (canvas_size[1] - img.height) // 2 - 20
+
+    # --- SOMBRA ---
+    sombra = Image.new("RGBA", img.size, (0, 0, 0, 180))
+    sombra = sombra.filter(ImageFilter.GaussianBlur(25))
+
+    fondo.paste(sombra, (x + 10, y + 30), sombra)
+    fondo.paste(img, (x, y), img)
+
+    draw = ImageDraw.Draw(fondo)
+
+    # --- TEXTO AUTOMÁTICO ---
+    texto = nombre_archivo.split(".")[0].replace("_", " ").upper()
 
     try:
-        # Llamada directa a la API de Remove.bg
-        response = requests.post(
-            'https://api.remove.bg/v1.0/removebg',
-            files={'image_file': file},
-            data={'size': 'auto'},
-            headers={'X-Api-Key': API_KEY},
-        )
+        font = ImageFont.truetype("arial.ttf", 24)
+    except:
+        font = ImageFont.load_default()
 
-        if response.status_code == requests.codes.ok:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            # Limpiamos el nombre original para evitar problemas de ruta
-            original_name = "".join(x for x in file.filename if x.isalnum() or x in "._- ")
-            output_name = f"proevo_{timestamp}_{original_name}.png"
-            output_path = os.path.join(PROCESSED_FOLDER, output_name)
-            
-            with open(output_path, 'wb') as out:
-                out.write(response.content)
-            
-            return jsonify({"success": True, "url": f"/static/processed/{output_name}"}), 200
+    text_w, text_h = draw.textsize(texto, font=font)
+
+    draw.text(
+        ((canvas_size[0] - text_w) / 2, canvas_size[1] - 60),
+        texto,
+        fill=(40, 40, 40),
+        font=font
+    )
+
+    # --- LOGO (RUTA SEGURA PARA RENDER) ---
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(base_dir, "static", "logo.png")
+
+        if os.path.exists(logo_path):
+            logo = Image.open(logo_path).convert("RGBA")
+            logo = logo.resize((140, 50))
+            fondo.paste(logo, (canvas_size[0] - 160, 20), logo)
         else:
-            return jsonify({"error": "Error de API: " + response.text}), response.status_code
-
+            print("⚠️ Logo no encontrado")
     except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        print("Error cargando logo:", e)
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    # --- GUARDAR FINAL ---
+    fondo.convert("RGB").save(output_path, "PNG")
+
+
+# 🏠 HOME
+@app.route("/")
+def index():
+    imagenes = os.listdir(PROCESSED)
+    return render_template("index.html", imagenes=imagenes)
+
+
+# 📤 SUBIR Y PROCESAR
+@app.route("/remove-bg", methods=["POST"])
+def remove_bg():
+    file = request.files.get("file")
+
+    if not file:
+        return {"error": "No file"}, 400
+
+    filename = file.filename
+
+    # 🧹 limpiar anteriores (opcional)
+    limpiar_procesados()
+
+    upload_path = os.path.join(UPLOAD, filename)
+    file.save(upload_path)
+
+    output_path = os.path.join(PROCESSED, filename)
+
+    procesar_imagen(upload_path, output_path, filename)
+
+    return {"ok": True}
+
+
+# 📥 DESCARGAR
+@app.route("/download/<filename>")
+def download(filename):
+    path = os.path.join(PROCESSED, filename)
+
+    if not os.path.exists(path):
+        return abort(404)
+
+    return send_file(path, as_attachment=True)
+
+
+# 🚀 LOCAL (Render usa gunicorn)
+if __name__ == "__main__":
+    app.run(debug=True)
