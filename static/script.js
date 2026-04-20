@@ -3,42 +3,46 @@ async function procesarImagen() {
     const btn = document.querySelector('button[onclick="procesarImagen()"]');
     const statusText = document.getElementById('fileNameDisplay');
 
-    if (!fileInput.files[0]) {
-        alert("Por favor, selecciona una imagen primero.");
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert("Primero seleccioná una foto de un repuesto.");
         return;
     }
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
 
-    // Cambiamos el estado del botón
+    // UI Feedback
     btn.disabled = true;
-    btn.innerText = "PROCESANDO...";
-    statusText.innerText = "La IA está trabajando...";
+    btn.style.opacity = "0.5";
+    btn.innerText = "QUITANDO FONDO...";
+    statusText.innerText = "Procesando para Proevo...";
 
     try {
         const response = await fetch('/remove-bg', {
             method: 'POST',
             body: formData
+            // IMPORTANTE: No pongas 'Content-Type' manual, deja que el navegador lo haga
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            alert("¡Imagen procesada con éxito!");
-            location.reload(); // Recarga para ver la nueva imagen en el catálogo
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            alert("¡Repuesto listo!");
+            window.location.reload(); 
         } else {
-            alert("Error en el servidor. Revisa los logs de Render.");
+            console.error("Error del servidor:", result);
+            alert("Error: " + (result.error || "Algo falló en el servidor."));
         }
     } catch (error) {
-        console.error("Error:", error);
-        alert("No se pudo conectar con el servidor.");
+        console.error("Error de conexión:", error);
+        alert("No se pudo conectar con el servidor de Render.");
     } finally {
         btn.disabled = false;
+        btn.style.opacity = "1";
         btn.innerText = "PROCESAR IMAGEN";
     }
 }
 
-// Función para actualizar el nombre del archivo al seleccionar
 function updateFileName() {
     const input = document.getElementById('fileInput');
     const display = document.getElementById('fileNameDisplay');
