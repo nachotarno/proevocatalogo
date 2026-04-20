@@ -145,23 +145,6 @@ async function procesarImagen() {
         btn.disabled = false;
         btn.innerText = "PROCESAR";
     }
-} {
-    const fileInput = document.getElementById('fileInput');
-
-    if (!fileInput.files[0]) {
-        alert("Subí una imagen");
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    await fetch('/remove-bg', {
-        method: 'POST',
-        body: formData
-    });
-
-    location.reload();
 }
 </script>
 
