@@ -1,130 +1,80 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PROEVO - Visual Library</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  .tracking-ui { letter-spacing: .22em; }
-  .grid-texture { background-image: radial-gradient(rgba(255,255,255,.18) 1px, transparent 1px); background-size: 24px 24px; }
-  .catalog-list article { display: grid; grid-template-columns: minmax(170px, 240px) 1fr; }
-  @media (max-width: 767px) { .catalog-list article { display: block; } }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROEVO - Gestión de Repuestos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .grid-bg { 
+            background-image: radial-gradient(#222 1px, transparent 1px); 
+            background-size: 30px 30px; 
+        }
+        .card-shadow { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
+        .proevo-gradient { background: linear-gradient(135deg, #ea580c 0%, #f59e0b 100%); }
+        .catalog-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .catalog-card:hover { transform: translateY(-5px); border-color: #ea580c; }
+        /* Estilo para que el logo se vea nítido y con un color más claro */
+        .proevo-logo { 
+            filter: invert(100%) brightness(120%) drop-shadow(0 4px 6px rgba(0,0,0,0.3)); 
+            max-height: 2.5rem; /* Ajusta la altura máxima para que no sea gigante */
+            width: auto;
+        }
+    </style>
 </head>
-<body class="bg-[#0a0a0a] text-zinc-100 selection:bg-orange-500/30">
-  <div class="min-h-screen flex flex-col md:flex-row">
-    <aside class="w-full md:w-20 lg:w-64 flex-shrink-0 bg-[#111111] border-r border-zinc-800 flex md:flex-col items-center lg:items-start p-4 z-20 gap-4">
-      <div class="w-full flex items-center justify-center lg:justify-start gap-3 md:mb-6 lg:mb-10 md:mt-2">
-        <div class="bg-orange-600 p-2 rounded-lg shadow-lg shadow-orange-950/30">
-          <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-        </div>
-        <div class="hidden lg:block">
-          <h1 class="font-black text-xl tracking-tight text-white leading-none">PROEVO</h1>
-          <p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">Visual Library</p>
-        </div>
-      </div>
+<body class="bg-[#0f0f0f] text-zinc-200 selection:bg-orange-500/30 grid-bg">
 
-      <nav class="flex md:flex-col gap-2 w-full">
-        <button onclick="scrollToScanner()" class="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200 transition-all duration-200 group" aria-label="Panel">
-          <svg class="w-5 h-5 group-hover:text-orange-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
-          <span class="hidden lg:block text-sm font-bold tracking-wide">Panel</span>
-        </button>
-        <button onclick="scrollToImages()" class="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl bg-zinc-800 text-white transition-all duration-200" aria-label="Catálogo">
-          <svg class="w-5 h-5 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 14 2 2 4-4"/></svg>
-          <span class="hidden lg:block text-sm font-bold tracking-wide">Catálogo</span>
-        </button>
-        <button onclick="scrollToScanner()" class="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200 transition-all duration-200 group" aria-label="Configuración">
-          <svg class="w-5 h-5 group-hover:text-orange-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span class="hidden lg:block text-sm font-bold tracking-wide">Configuración</span>
-        </button>
-      </nav>
-
-      <div class="mt-auto hidden lg:block w-full">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h4 class="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">Estadísticas</h4>
-          <div class="space-y-3">
-            <div class="flex justify-between items-center"><span class="text-xs text-zinc-500 font-medium">Procesadas</span><span id="statTotal" class="text-sm font-black text-zinc-200">0</span></div>
-            <div class="flex justify-between items-center"><span class="text-xs text-zinc-500 font-medium">En catálogo</span><span id="statVisibles" class="text-sm font-black text-zinc-200">0</span></div>
-            <div class="pt-2 border-t border-zinc-800 flex justify-between items-center"><span class="text-xs text-zinc-500 font-medium">Estado IA</span><span id="estadoIa" class="text-sm font-black text-orange-500">Estable</span></div>
-          </div>
+<div class="min-h-screen flex flex-col md:flex-row">
+    <aside class="w-full md:w-24 lg:w-72 flex-shrink-0 bg-[#151515]/80 backdrop-blur-xl border-r border-white/5 flex md:flex-col p-6 z-20 gap-8">
+        <div class="flex items-center gap-4 justify-center md:justify-start">
+            <img src="/static/logo-proevo.png" alt="Logo PROEVO" class="proevo-logo h-10 w-auto"> 
+            
+            <div class="hidden lg:block">
+                <p class="text-[10px] text-orange-500 uppercase font-black tracking-[0.2em]">Maintenance AI</p>
+            </div>
         </div>
-      </div>
+
+        <nav class="flex md:flex-col gap-3 w-full">
+            <button class="flex items-center gap-4 p-4 rounded-2xl text-white hover:bg-white/10 transition-all w-full">
+                <svg class="w-5 h-5 group-hover:text-orange-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                <span class="hidden lg:block font-semibold">Dashboard</span>
+            </button>
+            <button class="flex items-center gap-4 p-4 rounded-2xl bg-white/5 text-white border border-white/10 hover:bg-white/10 transition-all w-full">
+                <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                <span class="hidden lg:block font-semibold">Catálogo</span>
+            </button>
+            <button class="flex items-center gap-4 p-4 rounded-2xl text-white hover:bg-white/10 transition-all w-full">
+                <svg class="w-5 h-5 group-hover:text-orange-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span class="hidden lg:block font-semibold">Configuración</span>
+            </button>
+        </nav>
+
+        <div class="mt-auto hidden lg:block bg-orange-500/5 border border-orange-500/10 rounded-2xl p-5">
+            <p class="text-[10px] uppercase font-bold text-orange-500 mb-3 tracking-widest">Sistema Activo</p>
+            <div class="flex items-center gap-3">
+                <div class="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+                <span class="text-xs font-medium text-zinc-400">Motor IA Listo</span>
+            </div>
+        </div>
     </aside>
 
-    <main class="flex-1 flex flex-col min-h-screen bg-[#0a0a0a]">
-      <header id="scanner" class="bg-[#111111] border-b border-zinc-800 p-6 flex flex-col xl:flex-row gap-6 justify-between items-start xl:items-center z-10 shrink-0">
-        <section class="flex-1 w-full max-w-2xl">
-          <h2 class="text-sm font-black text-orange-500 uppercase tracking-widest mb-2">Eliminador de fondo IA</h2>
-          <div class="relative group">
-            <div class="absolute -inset-0.5 bg-gradient-to-r from-orange-600 to-amber-500 rounded-xl opacity-20 group-hover:opacity-40 transition duration-500 blur"></div>
-            <div class="relative bg-zinc-900 border border-zinc-700 hover:border-orange-500/50 transition-colors rounded-xl p-2 flex flex-col sm:flex-row sm:items-center gap-3 min-h-16">
-              <label id="uploadZone" for="fileInput" class="flex items-center gap-3 flex-1 cursor-pointer rounded-lg focus-within:ring-2 focus-within:ring-orange-500">
-                <span class="w-12 h-12 bg-zinc-800 rounded-lg flex items-center justify-center border border-dashed border-zinc-600 shrink-0">
-                  <svg class="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                </span>
-                <span class="flex-1">
-                  <span id="fileNameDisplay" class="block text-sm font-medium text-zinc-300">Arrastrá una imagen o hacé clic</span>
-                  <span class="block text-xs text-zinc-500">PNG, JPG hasta 10MB</span>
-                </span>
-                <input type="file" id="fileInput" accept="image/*" class="sr-only">
-              </label>
-              <button id="btnProcesar" onclick="procesarImagen()" class="h-12 sm:h-full px-6 bg-white hover:bg-zinc-200 disabled:bg-zinc-700 disabled:text-zinc-400 text-black text-xs font-black uppercase tracking-widest rounded-lg transition-colors whitespace-nowrap">Procesar</button>
+    <main class="flex-1 flex flex-col">
+        <section class="p-8">
+            <div class="flex items-end justify-between mb-10">
+                <div>
+                    <h3 class="text-4xl font-extrabold text-white tracking-tight">Catálogo</h3>
+                    <p class="text-zinc-500 mt-2 font-medium">Repuestos con fondo transparente listos para la venta.</p>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" placeholder="Filtrar repuesto..." class="bg-zinc-900 border border-white/5 rounded-xl px-5 py-3 text-sm focus:outline-none focus:border-orange-500/50 transition-all">
+                </div>
             </div>
-          </div>
-          <div id="processingStatus" class="hidden mt-3 text-xs text-zinc-400"></div>
-          <div id="resultadoPanel" class="hidden mt-4 bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <div class="flex flex-col sm:flex-row gap-4 sm:items-center">
-              <img id="resultado" class="w-full sm:w-32 h-32 object-contain rounded-lg bg-zinc-950 border border-zinc-800" alt="Resultado procesado">
-              <div class="flex-1">
-                <p class="text-xs uppercase tracking-widest font-black text-emerald-500 mb-2">Procesado correctamente</p>
-                <p class="text-sm text-zinc-400 mb-4">La imagen ya tiene fondo transparente, marca PROEVO y etiqueta de archivo.</p>
-                <a id="descargar" class="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white px-5 py-3 rounded-lg text-xs font-black uppercase tracking-widest" download="imagen.png">Descargar imagen</a>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        <section class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full xl:w-auto">
-          <div class="relative flex-1 xl:w-64">
-            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input id="buscarCatalogo" oninput="filtrarCatalogo()" type="search" placeholder="Buscar repuestos..." class="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 text-sm rounded-lg pl-10 pr-4 py-3 outline-none focus:border-zinc-600 transition-colors">
-          </div>
-          <select id="filtroCategoria" onchange="filtrarCatalogo()" class="bg-zinc-900 border border-zinc-800 text-zinc-300 text-sm rounded-lg px-4 py-3 outline-none focus:border-zinc-600">
-            <option value="">Todas</option>
-            <option value="Eléctrico">Eléctrico</option>
-            <option value="Transmisión">Transmisión</option>
-            <option value="Motor">Motor</option>
-            <option value="Catálogo">Catálogo</option>
-          </select>
-        </section>
-      </header>
-
-      <section id="imagenes" class="flex-1 p-6 md:p-8 overflow-y-auto">
-        <div class="flex flex-col md:flex-row md:justify-between md:items-end gap-5 mb-8">
-          <div>
-            <h2 class="text-3xl font-black text-white tracking-tight">Archivo Visual</h2>
-            <p class="text-zinc-500 text-sm mt-2 flex items-center gap-2">
-              <span class="w-4 h-4 rounded-full bg-orange-500/20 border border-orange-500 flex items-center justify-center"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span></span>
-              <span id="catalogoResumen">Mostrando 0 imágenes procesadas con fondo transparente</span>
-            </p>
-          </div>
-          <div class="flex bg-zinc-900 border border-zinc-800 rounded-lg p-1 w-fit">
-            <button id="btnGrid" onclick="setViewMode('grid')" class="p-2 rounded-md bg-zinc-800 text-white transition-colors" aria-label="Vista grilla">
-              <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
-            </button>
-            <button id="btnList" onclick="setViewMode('list')" class="p-2 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Vista lista">
-              <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>
-            </button>
-          </div>
-        </div>
-
-        <div id="catalogoImagenes" class="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"></div>
-        <p id="catalogoVacio" class="hidden text-center text-zinc-500 bg-[#111111] border border-zinc-800 rounded-2xl p-10">Todavía no hay imágenes procesadas.</p>
-      </section>
+            </section>
     </main>
-  </div>
+</div>
 
 <script src="/static/script.js"></script>
 </body>
