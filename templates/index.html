@@ -16,10 +16,9 @@
         .proevo-gradient { background: linear-gradient(135deg, #ea580c 0%, #f59e0b 100%); }
         .catalog-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .catalog-card:hover { transform: translateY(-5px); border-color: #ea580c; }
-        /* Estilo para que el logo se vea nítido y con un color más claro */
         .proevo-logo { 
             filter: invert(100%) brightness(120%) drop-shadow(0 4px 6px rgba(0,0,0,0.3)); 
-            max-height: 2.5rem; /* Ajusta la altura máxima para que no sea gigante */
+            max-height: 2.5rem;
             width: auto;
         }
     </style>
@@ -30,24 +29,19 @@
     <aside class="w-full md:w-24 lg:w-72 flex-shrink-0 bg-[#151515]/80 backdrop-blur-xl border-r border-white/5 flex md:flex-col p-6 z-20 gap-8">
         <div class="flex items-center gap-4 justify-center md:justify-start">
             <img src="/static/logo-proevo.png" alt="Logo PROEVO" class="proevo-logo h-10 w-auto"> 
-            
             <div class="hidden lg:block">
                 <p class="text-[10px] text-orange-500 uppercase font-black tracking-[0.2em]">Maintenance AI</p>
             </div>
         </div>
 
         <nav class="flex md:flex-col gap-3 w-full">
-            <button class="flex items-center gap-4 p-4 rounded-2xl text-white hover:bg-white/10 transition-all w-full">
-                <svg class="w-5 h-5 group-hover:text-orange-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+            <button class="flex items-center gap-4 p-4 rounded-2xl bg-white/5 text-white border border-white/10 hover:bg-white/10 transition-all w-full">
+                <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
                 <span class="hidden lg:block font-semibold">Dashboard</span>
             </button>
-            <button class="flex items-center gap-4 p-4 rounded-2xl bg-white/5 text-white border border-white/10 hover:bg-white/10 transition-all w-full">
-                <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            <button class="flex items-center gap-4 p-4 rounded-2xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all w-full">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 <span class="hidden lg:block font-semibold">Catálogo</span>
-            </button>
-            <button class="flex items-center gap-4 p-4 rounded-2xl text-white hover:bg-white/10 transition-all w-full">
-                <svg class="w-5 h-5 group-hover:text-orange-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span class="hidden lg:block font-semibold">Configuración</span>
             </button>
         </nav>
 
@@ -61,6 +55,29 @@
     </aside>
 
     <main class="flex-1 flex flex-col">
+        <header class="p-8 border-b border-white/5 bg-[#151515]/40">
+            <div class="max-w-4xl">
+                <h2 class="text-sm font-black text-orange-500 uppercase tracking-[0.3em] mb-4">Módulo de Limpieza Visual</h2>
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1 relative group">
+                        <input type="file" id="fileInput" class="hidden" onchange="document.getElementById('fileNameDisplay').innerText = this.files[0].name">
+                        <label for="fileInput" class="flex items-center gap-4 p-4 bg-[#1a1a1a] border-2 border-dashed border-zinc-800 rounded-2xl cursor-pointer group-hover:border-orange-500/50 transition-all">
+                            <div class="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-500 group-hover:text-orange-500 transition-colors">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-zinc-300" id="fileNameDisplay">Subir nuevo repuesto</p>
+                                <p class="text-[11px] text-zinc-600 font-medium">Click para seleccionar archivo</p>
+                            </div>
+                        </label>
+                    </div>
+                    <button onclick="procesarImagen()" class="proevo-gradient px-8 py-4 rounded-2xl text-white font-extrabold text-xs uppercase tracking-widest shadow-xl shadow-orange-900/20 hover:scale-105 active:scale-95 transition-all">
+                        Procesar Imagen
+                    </button>
+                </div>
+            </div>
+        </header>
+
         <section class="p-8">
             <div class="flex items-end justify-between mb-10">
                 <div>
@@ -68,11 +85,12 @@
                     <p class="text-zinc-500 mt-2 font-medium">Repuestos con fondo transparente listos para la venta.</p>
                 </div>
                 <div class="flex gap-2">
-                    <input type="text" placeholder="Filtrar repuesto..." class="bg-zinc-900 border border-white/5 rounded-xl px-5 py-3 text-sm focus:outline-none focus:border-orange-500/50 transition-all">
+                    <input type="text" id="buscarCatalogo" placeholder="Filtrar repuesto..." class="bg-zinc-900 border border-white/5 rounded-xl px-5 py-3 text-sm focus:outline-none focus:border-orange-500/50 transition-all">
                 </div>
             </div>
 
-            </section>
+            <div id="catalogoImagenes" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8"></div>
+        </section>
     </main>
 </div>
 
