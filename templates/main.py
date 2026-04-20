@@ -1,153 +1,85 @@
-import io
 import os
-import time
-
-import requests
-from flask import Flask, jsonify, render_template, request
-from PIL import Image, ImageDraw, ImageFont
-from werkzeug.utils import secure_filename
+from flask import Flask, render_template, request, jsonify
+from removebg import RemoveBg
+from datetime import datetime
 
 app = Flask(__name__)
 
+# --- CONFIGURACIÓN ---
+# Asegúrate de tener esta variable en Render -> Environment Variables
 API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
+
+# Carpetas de almacenamiento
+UPLOAD_FOLDER = os.path.join("static", "uploads")
 PROCESSED_FOLDER = os.path.join("static", "processed")
+
+# Crear carpetas si no existen
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
+@app.route('/')
+def index():
+    # Escanea la carpeta processed para mostrar las imágenes en el catálogo
+    imagenes = []
+    if os.path.exists(PROCESSED_FOLDER):
+        imagenes = [f for f in os.listdir(PROCESSED_FOLDER) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        # Ordenar por fecha de creación (más nuevas primero)
+        imagenes.sort(key=lambda x: os.path.getmtime(os.path.join(PROCESSED_FOLDER, x)), reverse=True)
+    
+    return render_template('index.html', imagenes=imagenes)
 
-def make_white_transparent(image):
-    image = image.convert("RGBA")
-    pixels = []
-
-    for red, green, blue, alpha in image.getdata():
-        if red > 235 and green > 235 and blue > 235:
-            pixels.append((255, 255, 255, 0))
-        else:
-            pixels.append((red, green, blue, alpha))
-
-    image.putdata(pixels)
-    return image
-
-
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-
-@app.route("/processed-images")
-def processed_images():
-    images = []
-
-    for filename in os.listdir(PROCESSED_FOLDER):
-        if filename.lower().endswith(".png"):
-            file_path = os.path.join(PROCESSED_FOLDER, filename)
-            images.append(
-                {
-                    "filename": filename,
-                    "url": f"/static/processed/{filename}",
-                    "created": os.path.getmtime(file_path),
-                }
-            )
-
-    images.sort(key=lambda image: image["created"], reverse=True)
-    return jsonify({"images": images})
-
-
-@app.route("/remove-bg", methods=["POST"])
+@app.route('/remove-bg', methods=['POST'])
 def remove_bg():
+    # 1. Validación de API Key
     if not API_KEY:
-        return jsonify({"error": "Falta configurar la clave REMOVE_BG_API_KEY de remove.bg."}), 500
+        print("DEBUG ERROR: No se encontró REMOVE_BG_API_KEY en las variables de entorno.")
+        return jsonify({"error": "Falta la configuración de API en el servidor"}), 500
 
-    if "image" not in request.files:
-        return jsonify({"error": "No se recibió ninguna imagen."}), 400
-
-    image = request.files["image"]
-    filename = image.filename
-
-    name_without_ext = os.path.splitext(filename)[0]
-
-    try:
-        response = requests.post(
-            "https://api.remove.bg/v1.0/removebg",
-            files={"image_file": image},
-            data={"size": "auto"},
-            headers={"X-Api-Key": API_KEY},
-            timeout=60,
-        )
-    except requests.RequestException:
-        return jsonify({"error": "No se pudo conectar con remove.bg. Intentá de nuevo."}), 502
-
-    if response.status_code == 200:
-        img = Image.open(io.BytesIO(response.content)).convert("RGBA")
-        footer_height = max(90, int(img.height * 0.16))
-        canvas = Image.new("RGBA", (img.width, img.height + footer_height), (0, 0, 0, 0))
-        canvas.paste(img, ((canvas.width - img.width) // 2, 0), img)
-        img = canvas
-
-        try:
-            logo = make_white_transparent(Image.open("static/logo.png"))
-
-            logo_width = int(img.width * 0.15)
-            ratio = logo_width / logo.width
-            logo_height = int(logo.height * ratio)
-            logo = logo.resize((logo_width, logo_height))
-
-            position_logo = (img.width - logo.width - 20, 20)
-
-            img.paste(logo, position_logo, logo)
-
-        except Exception:
-            print("⚠️ Logo no encontrado o error cargando logo")
-
-        draw = ImageDraw.Draw(img)
-
-        try:
-            font = ImageFont.truetype("arial.ttf", int(img.width * 0.04))
-        except Exception:
-            font = ImageFont.load_default()
-
-        text = name_without_ext.upper()
-
-        text_box = draw.textbbox((0, 0), text, font=font)
-        text_width = text_box[2] - text_box[0]
-        text_height = text_box[3] - text_box[1]
-
-        text_position = ((img.width - text_width) // 2, img.height - footer_height + ((footer_height - text_height) // 2))
-
-        shadow_position = (text_position[0] + 2, text_position[1] + 2)
-        draw.text(
-            shadow_position,
-            text,
-            fill=(0, 0, 0, 180),
-            font=font,
-        )
-
-        draw.text(
-            text_position,
-            text,
-            fill=(255, 255, 255, 255),
-            font=font,
-        )
-
-        safe_name = secure_filename(name_without_ext) or "imagen"
-        processed_filename = f"proevo_{safe_name}_{int(time.time())}.png"
-        output_path = os.path.join(PROCESSED_FOLDER, processed_filename)
-        img.save(output_path)
-
-        return jsonify(
-            {
-                "filename": processed_filename,
-                "url": f"/static/processed/{processed_filename}",
-            }
-        )
+    # 2. Verificación del archivo recibido
+    if 'file' not in request.files:
+        print("DEBUG ERROR: El campo 'file' no llegó en la petición.")
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        print("DEBUG ERROR: El usuario no seleccionó ningún archivo.")
+        return jsonify({"error": "Archivo sin nombre"}), 400
 
     try:
-        error_data = response.json()
-        message = error_data.get("errors", [{}])[0].get("title", "Error procesando imagen")
-    except ValueError:
-        message = response.text or "Error procesando imagen"
+        # 3. Guardar archivo original temporalmente
+        filename = file.filename
+        input_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(input_path)
+        print(f"DEBUG: Imagen original guardada en {input_path}")
 
-    return jsonify({"error": message}), response.status_code
+        # 4. Procesamiento con Remove.bg
+        # Generamos un nombre único para evitar conflictos
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_name = f"proevo_{timestamp}_{filename.split('.')[0]}.png"
+        output_path = os.path.join(PROCESSED_FOLDER, output_name)
 
+        rmbg = RemoveBg(API_KEY, "error.log")
+        rmbg.remove_background_from_img_file(input_path, out_path=output_path)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+        # Verificar si se creó el archivo
+        if os.path.exists(output_path):
+            print(f"DEBUG: Procesamiento exitoso. Imagen guardada en {output_path}")
+            # Opcional: Borrar la imagen original para no llenar el disco
+            # os.remove(input_path) 
+            return jsonify({
+                "success": True, 
+                "message": "Imagen procesada",
+                "url": f"/{output_path}"
+            }), 200
+        else:
+            print("DEBUG ERROR: El proceso terminó pero no se generó el archivo de salida.")
+            return jsonify({"error": "Error al generar la imagen transparente"}), 500
+
+    except Exception as e:
+        print(f"DEBUG EXCEPTION: {str(e)}")
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    # Usar puerto de Render si está disponible
+    port = int(os.environ.get("PORT", 5000))RT", 5000)))
