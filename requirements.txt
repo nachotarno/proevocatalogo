@@ -1,5 +1,4 @@
 flask
 pillow
 gunicorn
-rembg
-onnxruntime
+requests
