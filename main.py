@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, send_file, abort
-import os
+import os, io, re
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from rembg import remove
 from werkzeug.utils import secure_filename
@@ -14,59 +14,98 @@ os.makedirs(UPLOAD, exist_ok=True)
 os.makedirs(PROCESSED, exist_ok=True)
 
 
+# ---------- UTIL ----------
+def limpiar_nombre(nombre):
+    base = os.path.splitext(nombre)[0]
+    base = base.replace("_", " ").replace("-", " ")
+    base = re.sub(r"\s+", " ", base).strip().upper()
+    return base
+
+
+def cargar_fuente(size=28):
+    try:
+        return ImageFont.truetype("arial.ttf", size)
+    except:
+        return ImageFont.load_default()
+
+
+# ---------- PROCESAMIENTO PRO ----------
 def procesar(imagen_path, output_path):
     try:
-        # ---------- QUITAR FONDO REAL ----------
+        # 1️⃣ REMOVE BG IA
         with open(imagen_path, "rb") as f:
-            input_data = f.read()
+            output = remove(f.read())
 
-        output_data = remove(input_data)
+        img = Image.open(io.BytesIO(output)).convert("RGBA")
 
-        producto = Image.open(
-            io.BytesIO(output_data)
-        ).convert("RGBA")
+        # 2️⃣ RECORTE AUTOMÁTICO (bounding box real)
+        bbox = img.getbbox()
+        if bbox:
+            img = img.crop(bbox)
 
-        # ---------- FONDO BLANCO ----------
-        canvas = Image.new("RGBA", (900, 900), (255,255,255,255))
+        # 3️⃣ CANVAS PROPORCIONAL
+        W, H = 1000, 1000
+        canvas = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
-        producto.thumbnail((650,650))
+        # 4️⃣ ESCALA INTELIGENTE
+        max_size = 700
+        img.thumbnail((max_size, max_size), Image.LANCZOS)
 
-        x = (900 - producto.width)//2
-        y = (900 - producto.height)//2 - 30
+        # 5️⃣ CENTRADO PERFECTO
+        x = (W - img.width) // 2
+        y = (H - img.height) // 2 - 40
 
-        # ---------- SOMBRA ----------
-        shadow = Image.new("RGBA", producto.size, (0,0,0,150))
-        shadow = shadow.filter(ImageFilter.GaussianBlur(25))
+        # 6️⃣ SOMBRA PROFESIONAL
+        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw_shadow = ImageDraw.Draw(shadow)
 
-        canvas.paste(shadow, (x+10, y+30), shadow)
-        canvas.paste(producto, (x,y), producto)
+        draw_shadow.ellipse(
+            (img.width*0.1, img.height*0.75, img.width*0.9, img.height*0.95),
+            fill=(0, 0, 0, 120)
+        )
+
+        shadow = shadow.filter(ImageFilter.GaussianBlur(30))
+        canvas.paste(shadow, (x, y + 50), shadow)
+
+        # 7️⃣ PEGAR PRODUCTO
+        canvas.paste(img, (x, y), img)
 
         draw = ImageDraw.Draw(canvas)
 
-        # ---------- TEXTO ----------
-        texto = os.path.basename(imagen_path).split(".")[0]
+        # 8️⃣ TEXTO LIMPIO
+        texto = limpiar_nombre(os.path.basename(imagen_path))
 
-        try:
-            font = ImageFont.truetype("arial.ttf", 24)
-        except:
-            font = ImageFont.load_default()
+        if len(texto) > 45:
+            texto = texto[:42] + "..."
 
-        draw.text((50, 840), texto, fill=(50,50,50), font=font)
+        font = cargar_fuente(30)
 
-        # ---------- LOGO ----------
+        tw, th = draw.textsize(texto, font=font)
+
+        draw.text(
+            ((W - tw) / 2, H - 80),
+            texto,
+            fill=(50, 50, 50),
+            font=font
+        )
+
+        # 9️⃣ LOGO
         logo_path = os.path.join(BASE_DIR, "static/logo.png")
+
         if os.path.exists(logo_path):
             logo = Image.open(logo_path).convert("RGBA")
-            logo.thumbnail((140,50))
-            canvas.paste(logo, (740,20), logo)
+            logo.thumbnail((200, 60))
+            canvas.paste(logo, (W - logo.width - 30, 30), logo)
 
+        # 🔟 EXPORT
         canvas.convert("RGB").save(output_path, "PNG")
 
     except Exception as e:
-        print("ERROR PROCESANDO:", e)
+        print("ERROR PRO:", e)
         raise e
 
 
+# ---------- ROUTES ----------
 @app.route("/")
 def index():
     files = os.listdir(PROCESSED)
@@ -93,7 +132,7 @@ def remove_bg():
         return {"ok": True}
 
     except Exception as e:
-        print("ERROR:", e)
+        print("ERROR ENDPOINT:", e)
         return {"error": str(e)}, 500
 
 
@@ -107,6 +146,7 @@ def download(filename):
     return send_file(path, as_attachment=True)
 
 
+# ---------- RUN ----------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
