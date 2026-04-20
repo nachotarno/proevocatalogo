@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, send_file, abort
-import os, io, re
+import os, io
+import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from rembg import remove
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -13,15 +13,10 @@ PROCESSED = os.path.join(BASE_DIR, "static/processed")
 os.makedirs(UPLOAD, exist_ok=True)
 os.makedirs(PROCESSED, exist_ok=True)
 
+API_KEY = os.environ.get("REMOVE_BG_API_KEY")
+
 
 # ---------- UTIL ----------
-def limpiar_nombre(nombre):
-    base = os.path.splitext(nombre)[0]
-    base = base.replace("_", " ").replace("-", " ")
-    base = re.sub(r"\s+", " ", base).strip().upper()
-    return base
-
-
 def cargar_fuente(size=28):
     try:
         return ImageFont.truetype("arial.ttf", size)
@@ -29,50 +24,68 @@ def cargar_fuente(size=28):
         return ImageFont.load_default()
 
 
-# ---------- PROCESAMIENTO PRO ----------
+def limpiar_nombre(nombre):
+    base = os.path.splitext(nombre)[0]
+    base = base.replace("_", " ").replace("-", " ")
+    return base.upper()
+
+
+# ---------- REMOVE BG (API PRO) ----------
+def quitar_fondo_removebg(image_path):
+    with open(image_path, "rb") as img_file:
+        response = requests.post(
+            "https://api.remove.bg/v1.0/removebg",
+            files={"image_file": img_file},
+            data={"size": "auto"},
+            headers={"X-Api-Key": API_KEY},
+        )
+
+    if response.status_code != 200:
+        raise Exception(f"Remove.bg error: {response.text}")
+
+    return response.content
+
+
+# ---------- PROCESO CATÁLOGO ----------
 def procesar(imagen_path, output_path):
     try:
-        # 1️⃣ REMOVE BG IA
-        with open(imagen_path, "rb") as f:
-            output = remove(f.read())
+        # 1️⃣ quitar fondo PRO
+        img_bytes = quitar_fondo_removebg(imagen_path)
 
-        img = Image.open(io.BytesIO(output)).convert("RGBA")
+        producto = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-        # 2️⃣ RECORTE AUTOMÁTICO (bounding box real)
-        bbox = img.getbbox()
+        # 2️⃣ recorte automático
+        bbox = producto.getbbox()
         if bbox:
-            img = img.crop(bbox)
+            producto = producto.crop(bbox)
 
-        # 3️⃣ CANVAS PROPORCIONAL
+        # 3️⃣ canvas
         W, H = 1000, 1000
         canvas = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
-        # 4️⃣ ESCALA INTELIGENTE
-        max_size = 700
-        img.thumbnail((max_size, max_size), Image.LANCZOS)
+        producto.thumbnail((700, 700))
 
-        # 5️⃣ CENTRADO PERFECTO
-        x = (W - img.width) // 2
-        y = (H - img.height) // 2 - 40
+        x = (W - producto.width) // 2
+        y = (H - producto.height) // 2 - 40
 
-        # 6️⃣ SOMBRA PROFESIONAL
-        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        # 4️⃣ sombra pro
+        shadow = Image.new("RGBA", producto.size, (0, 0, 0, 0))
         draw_shadow = ImageDraw.Draw(shadow)
 
         draw_shadow.ellipse(
-            (img.width*0.1, img.height*0.75, img.width*0.9, img.height*0.95),
+            (producto.width*0.1, producto.height*0.75, producto.width*0.9, producto.height*0.95),
             fill=(0, 0, 0, 120)
         )
 
         shadow = shadow.filter(ImageFilter.GaussianBlur(30))
         canvas.paste(shadow, (x, y + 50), shadow)
 
-        # 7️⃣ PEGAR PRODUCTO
-        canvas.paste(img, (x, y), img)
+        # 5️⃣ pegar producto
+        canvas.paste(producto, (x, y), producto)
 
         draw = ImageDraw.Draw(canvas)
 
-        # 8️⃣ TEXTO LIMPIO
+        # 6️⃣ texto
         texto = limpiar_nombre(os.path.basename(imagen_path))
 
         if len(texto) > 45:
@@ -89,7 +102,7 @@ def procesar(imagen_path, output_path):
             font=font
         )
 
-        # 9️⃣ LOGO
+        # 7️⃣ logo
         logo_path = os.path.join(BASE_DIR, "static/logo.png")
 
         if os.path.exists(logo_path):
@@ -97,11 +110,11 @@ def procesar(imagen_path, output_path):
             logo.thumbnail((200, 60))
             canvas.paste(logo, (W - logo.width - 30, 30), logo)
 
-        # 🔟 EXPORT
+        # 8️⃣ guardar
         canvas.convert("RGB").save(output_path, "PNG")
 
     except Exception as e:
-        print("ERROR PRO:", e)
+        print("ERROR PROCESANDO:", e)
         raise e
 
 
@@ -120,6 +133,9 @@ def remove_bg():
         if not file:
             return {"error": "no file"}, 400
 
+        if not API_KEY:
+            return {"error": "Falta API KEY remove.bg"}, 500
+
         filename = secure_filename(file.filename)
 
         upload_path = os.path.join(UPLOAD, filename)
@@ -132,7 +148,7 @@ def remove_bg():
         return {"ok": True}
 
     except Exception as e:
-        print("ERROR ENDPOINT:", e)
+        print("ERROR:", e)
         return {"error": str(e)}, 500
 
 
