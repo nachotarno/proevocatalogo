@@ -1,190 +1,127 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Proevo - Catálogo IA</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proevo</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com"></script>
 
-    <style>
-        body {
-            background: radial-gradient(circle at 20% 10%, #1a1a1a, #0a0a0a 60%);
-            color: white;
-        }
+<style>
+body {
+    background: radial-gradient(circle at 20% 10%, #1a1a1a, #0a0a0a 60%);
+    color: white;
+}
 
-        .card-glass {
-            background: rgba(20,20,20,0.6);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.08);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-        }
+.card {
+    background: rgba(20,20,20,0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.08);
+}
 
-        .proevo-gradient {
-            background: linear-gradient(135deg, #f59e0b 0%, #ff8c00 100%);
-        }
-
-        .hover-soft {
-            transition: all 0.3s ease;
-        }
-    </style>
+.proevo {
+    background: linear-gradient(135deg, #f59e0b, #ff8c00);
+}
+</style>
 </head>
 
-<body class="font-sans antialiased">
+<body>
 
-<!-- NAVBAR -->
-<nav class="px-8 py-5 flex justify-between items-center bg-black/30 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50">
-    <h1 class="text-2xl font-black tracking-tight italic">PROEVO</h1>
-
-    <div class="flex items-center gap-3 text-xs text-zinc-400 font-semibold">
-        <span>SISTEMA IA</span>
-        <div class="w-2 h-2 rounded-full bg-orange-400 animate-pulse"></div>
-    </div>
+<nav class="p-6 flex justify-between bg-black/30 backdrop-blur border-b border-white/10">
+    <h1 class="font-black text-xl">PROEVO</h1>
 </nav>
 
-<!-- MAIN -->
-<main class="max-w-7xl mx-auto px-6 py-12">
+<main class="max-w-5xl mx-auto p-6">
 
-    <!-- HERO -->
-    <section class="text-center mb-20 card-glass p-14 rounded-[2.5rem]">
+<section class="card p-10 rounded-3xl text-center mb-12">
 
-        <h2 class="text-5xl font-black tracking-tight mb-4">
-            Procesar Repuesto
-        </h2>
+<h2 class="text-3xl font-black mb-6">Subir Imagen</h2>
 
-        <p id="fileNameDisplay" class="text-zinc-400 mb-10">
-            Subí una imagen para eliminar el fondo automáticamente
-        </p>
+<p id="fileNameDisplay" class="text-zinc-400 mb-6">Arrastrá o elegí imagen</p>
 
-        <div class="flex flex-col items-center gap-6">
+<div id="dropZone" class="border-2 border-dashed border-zinc-600 p-10 rounded-xl cursor-pointer">
 
-            <input type="file" id="fileInput" class="hidden" onchange="updateFileName()">
+<input type="file" id="fileInput" class="hidden">
 
-            <label for="fileInput"
-                class="cursor-pointer border border-dashed border-zinc-600 px-10 py-5 rounded-2xl font-semibold text-zinc-400 hover:border-orange-400 hover:text-white hover-soft">
-                Seleccionar imagen
-            </label>
+<p>Click o arrastrar</p>
 
-            <button onclick="procesarImagen()" id="btnProcesar"
-                class="proevo-gradient px-16 py-5 rounded-full font-black text-black tracking-wide hover:scale-105 hover:shadow-lg hover:shadow-orange-500/30 active:scale-95 hover-soft">
-                PROCESAR
-            </button>
+<img id="preview" class="hidden mt-4 mx-auto max-h-40"/>
 
-        </div>
-    </section>
+</div>
 
-    <!-- GALERIA -->
-    <section>
+<button onclick="procesarImagen()" id="btnProcesar"
+class="proevo mt-6 px-10 py-4 rounded-full font-bold text-black">
+PROCESAR
+</button>
 
-        <div class="flex justify-between items-center mb-12">
-            <h3 class="text-3xl font-black tracking-tight border-l-4 border-orange-400 pl-4">
-                Catálogo
-            </h3>
-            <span class="text-xs text-zinc-500 uppercase tracking-widest">
-                Vista previa
-            </span>
-        </div>
+</section>
 
-        <div id="catalogoImagenes"
-            class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+<div class="grid grid-cols-2 md:grid-cols-3 gap-6">
 
-            {% if imagenes %}
-                {% for imagen in imagenes %}
+{% for imagen in imagenes %}
+<div class="card p-4 rounded-2xl text-center">
 
-                <div class="card-glass rounded-[2rem] p-5 text-center hover:scale-[1.02] hover:border-white/20 hover-soft">
+<img src="{{ url_for('static', filename='processed/' + imagen) }}" class="mx-auto mb-3">
 
-                    <div class="aspect-square bg-white rounded-xl mb-5 flex items-center justify-center overflow-hidden">
-                        <img src="{{ url_for('static', filename='processed/' + imagen) }}"
-                             class="max-w-full max-h-full object-contain hover:scale-105 transition duration-300">
-                    </div>
+<p class="text-sm text-zinc-400">{{ imagen }}</p>
 
-                    <div class="mb-5">
-                        <p class="text-[10px] text-orange-400 font-bold uppercase tracking-widest">
-                            Repuesto
-                        </p>
-                        <p class="text-sm text-zinc-300 font-semibold truncate" title="{{ imagen }}">
-                            {{ imagen }}
-                        </p>
-                    </div>
+<a href="/download/{{ imagen }}" class="block mt-3 bg-zinc-800 p-2 rounded">
+Descargar
+</a>
 
-                    <a href="/download/{{ imagen }}"
-                        class="block w-full bg-zinc-800 hover:bg-white hover:text-black text-xs font-bold py-4 rounded-xl transition">
-                        Descargar PNG
-                    </a>
+</div>
+{% endfor %}
 
-                </div>
-
-                {% endfor %}
-            {% else %}
-
-                <div class="col-span-full text-center py-32 border border-dashed border-white/10 rounded-3xl">
-                    <p class="text-zinc-600 font-bold uppercase tracking-widest">
-                        No hay repuestos todavía
-                    </p>
-                </div>
-
-            {% endif %}
-
-        </div>
-    </section>
+</div>
 
 </main>
 
-<!-- FOOTER -->
-<footer class="mt-24 text-center py-10 border-t border-white/5">
-    <p class="text-[10px] text-zinc-600 uppercase tracking-[0.3em]">
-        Proevo © 2026
-    </p>
-</footer>
-
 <script>
-function updateFileName() {
-    const input = document.getElementById('fileInput');
-    const display = document.getElementById('fileNameDisplay');
+const dropZone = document.getElementById("dropZone");
+const input = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
 
-    if (input.files.length > 0) {
-        display.innerText = "Seleccionado: " + input.files[0].name;
-        display.style.color = "#f59e0b";
-    }
+dropZone.onclick = () => input.click();
+
+input.onchange = () => handleFile();
+
+dropZone.ondragover = e => {
+    e.preventDefault();
+};
+
+dropZone.ondrop = e => {
+    e.preventDefault();
+    input.files = e.dataTransfer.files;
+    handleFile();
+};
+
+function handleFile() {
+    const file = input.files[0];
+    if (!file) return;
+
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove("hidden");
+
+    document.getElementById("fileNameDisplay").innerText = file.name;
 }
 
 async function procesarImagen() {
     const fileInput = document.getElementById('fileInput');
-    const btn = document.getElementById('btnProcesar');
-    const statusText = document.getElementById('fileNameDisplay');
 
     if (!fileInput.files[0]) {
-        alert("Seleccioná una imagen primero.");
+        alert("Subí una imagen");
         return;
     }
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
 
-    btn.disabled = true;
-    btn.innerText = "PROCESANDO...";
-    btn.style.opacity = "0.6";
+    await fetch('/remove-bg', {
+        method: 'POST',
+        body: formData
+    });
 
-    try {
-        const response = await fetch('/remove-bg', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (response.ok) {
-            statusText.innerText = "Imagen lista...";
-            setTimeout(() => location.reload(), 1200);
-        } else {
-            alert("Error al procesar");
-        }
-
-    } catch {
-        alert("Error de conexión");
-    }
-
-    btn.disabled = false;
-    btn.innerText = "PROCESAR";
-    btn.style.opacity = "1";
+    location.reload();
 }
 </script>
 
