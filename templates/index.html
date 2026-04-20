@@ -107,6 +107,46 @@ function handleFile() {
 
 async function procesarImagen() {
     const fileInput = document.getElementById('fileInput');
+    const btn = document.getElementById('btnProcesar');
+    const status = document.getElementById('fileNameDisplay');
+
+    if (!fileInput.files[0]) {
+        alert("Subí una imagen primero");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    btn.disabled = true;
+    btn.innerText = "PROCESANDO...";
+    status.innerText = "Procesando imagen...";
+
+    try {
+        const response = await fetch('/remove-bg', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            status.innerText = "Imagen procesada ✔";
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else {
+            const error = await response.text();
+            alert("Error: " + error);
+            btn.disabled = false;
+            btn.innerText = "PROCESAR";
+        }
+
+    } catch (err) {
+        alert("Error de conexión");
+        btn.disabled = false;
+        btn.innerText = "PROCESAR";
+    }
+} {
+    const fileInput = document.getElementById('fileInput');
 
     if (!fileInput.files[0]) {
         alert("Subí una imagen");
