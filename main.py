@@ -1,118 +1,111 @@
 from flask import Flask, render_template, request, send_file, abort
-import os
+import os, sqlite3
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-UPLOAD = "static/uploads"
-PROCESSED = "static/processed"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD = os.path.join(BASE_DIR, "static", "uploads")
+PROCESSED = os.path.join(BASE_DIR, "static", "processed")
+DB = os.path.join(BASE_DIR, "db.sqlite3")
 
 os.makedirs(UPLOAD, exist_ok=True)
 os.makedirs(PROCESSED, exist_ok=True)
 
-
-# 🧹 LIMPIAR IMÁGENES VIEJAS (opcional pero útil)
-def limpiar_procesados():
-    for file in os.listdir(PROCESSED):
-        path = os.path.join(PROCESSED, file)
-        try:
-            os.remove(path)
-        except:
-            pass
-
-
-# 🔥 PROCESAMIENTO PRO
-def procesar_imagen(imagen_path, output_path, nombre_archivo):
-    print("PROCESANDO:", nombre_archivo)
-
-    img = Image.open(imagen_path).convert("RGBA")
-
-    # --- LIENZO BLANCO ---
-    canvas_size = (800, 800)
-    fondo = Image.new("RGBA", canvas_size, (255, 255, 255, 255))
-
-    # --- AJUSTE TAMAÑO ---
-    img.thumbnail((600, 600), Image.LANCZOS)
-
-    # --- CENTRADO ---
-    x = (canvas_size[0] - img.width) // 2
-    y = (canvas_size[1] - img.height) // 2 - 20
-
-    # --- SOMBRA ---
-    sombra = Image.new("RGBA", img.size, (0, 0, 0, 180))
-    sombra = sombra.filter(ImageFilter.GaussianBlur(25))
-
-    fondo.paste(sombra, (x + 10, y + 30), sombra)
-    fondo.paste(img, (x, y), img)
-
-    draw = ImageDraw.Draw(fondo)
-
-    # --- TEXTO AUTOMÁTICO ---
-    texto = nombre_archivo.split(".")[0].replace("_", " ").upper()
-
-    try:
-        font = ImageFont.truetype("arial.ttf", 24)
-    except:
-        font = ImageFont.load_default()
-
-    text_w, text_h = draw.textsize(texto, font=font)
-
-    draw.text(
-        ((canvas_size[0] - text_w) / 2, canvas_size[1] - 60),
-        texto,
-        fill=(40, 40, 40),
-        font=font
+# ---------- DB ----------
+def init_db():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT
     )
+    """)
+    conn.commit()
+    conn.close()
 
-    # --- LOGO (RUTA SEGURA PARA RENDER) ---
+init_db()
+
+# ---------- PROCESAR IMAGEN ----------
+def procesar(imagen_path, output_path):
     try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = os.path.join(base_dir, "static", "logo.png")
+        img = Image.open(imagen_path).convert("RGBA")
 
-        if os.path.exists(logo_path):
-            logo = Image.open(logo_path).convert("RGBA")
-            logo = logo.resize((140, 50))
-            fondo.paste(logo, (canvas_size[0] - 160, 20), logo)
-        else:
-            print("⚠️ Logo no encontrado")
+        canvas = Image.new("RGBA", (800, 800), (255,255,255,255))
+
+        img.thumbnail((600,600))
+        x = (800 - img.width)//2
+        y = (800 - img.height)//2
+
+        # sombra
+        shadow = Image.new("RGBA", img.size, (0,0,0,150))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(20))
+
+        canvas.paste(shadow, (x+10,y+20), shadow)
+        canvas.paste(img, (x,y), img)
+
+        draw = ImageDraw.Draw(canvas)
+
+        # texto
+        text = os.path.basename(imagen_path).split(".")[0]
+
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except:
+            font = ImageFont.load_default()
+
+        draw.text((50,750), text, fill=(50,50,50), font=font)
+
+        # logo
+        try:
+            logo_path = os.path.join(BASE_DIR, "static", "logo.png")
+            if os.path.exists(logo_path):
+                logo = Image.open(logo_path).convert("RGBA")
+                logo.thumbnail((120,40))
+                canvas.paste(logo, (650,20), logo)
+        except Exception as e:
+            print("ERROR LOGO:", e)
+
+        canvas.convert("RGB").save(output_path, "PNG")
+
     except Exception as e:
-        print("Error cargando logo:", e)
-
-    # --- GUARDAR FINAL ---
-    fondo.convert("RGB").save(output_path, "PNG")
+        print("ERROR PROCESANDO:", e)
+        raise e
 
 
-# 🏠 HOME
+# ---------- RUTAS ----------
 @app.route("/")
 def index():
-    imagenes = os.listdir(PROCESSED)
-    return render_template("index.html", imagenes=imagenes)
+    files = os.listdir(PROCESSED)
+    return render_template("index.html", imagenes=files)
 
 
-# 📤 SUBIR Y PROCESAR
 @app.route("/remove-bg", methods=["POST"])
 def remove_bg():
-    file = request.files.get("file")
+    try:
+        file = request.files.get("file")
 
-    if not file:
-        return {"error": "No file"}, 400
+        if not file:
+            return {"error": "no file"}, 400
 
-    filename = file.filename
+        filename = secure_filename(file.filename)
 
-    # 🧹 limpiar anteriores (opcional)
-    limpiar_procesados()
+        upload_path = os.path.join(UPLOAD, filename)
+        file.save(upload_path)
 
-    upload_path = os.path.join(UPLOAD, filename)
-    file.save(upload_path)
+        output_path = os.path.join(PROCESSED, filename)
 
-    output_path = os.path.join(PROCESSED, filename)
+        procesar(upload_path, output_path)
 
-    procesar_imagen(upload_path, output_path, filename)
+        return {"ok": True}
 
-    return {"ok": True}
+    except Exception as e:
+        print("ERROR ENDPOINT:", e)
+        return {"error": str(e)}, 500
 
 
-# 📥 DESCARGAR
 @app.route("/download/<filename>")
 def download(filename):
     path = os.path.join(PROCESSED, filename)
@@ -123,9 +116,7 @@ def download(filename):
     return send_file(path, as_attachment=True)
 
 
-# 🚀 LOCAL (Render usa gunicorn)
-import os
-
+# ---------- RUN ----------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
