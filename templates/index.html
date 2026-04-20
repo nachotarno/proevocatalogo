@@ -49,5 +49,90 @@
             <div id="catalogoImagenes" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                 {% if imagenes %}
                     {% for imagen in imagenes %}
-                    <div class="bg-[#151515] border border-white/5 p-5 rounded-[2.5rem] card-shadow transition-all hover:border-white/20">
-                        <div class="aspect-square rounded-[1.5rem] bg-white mb-5 overflow-hidden flex items-
+                    <div class="bg-[#151515] border border-white/5 p-5 rounded-[2.5rem] card-shadow transition-all hover:border-white/20 text-center">
+                        <div class="aspect-square rounded-[1.5rem] bg-white mb-5 overflow-hidden flex items-center justify-center p-4">
+                            <img src="{{ url_for('static', filename='processed/' + imagen) }}" alt="Repuesto" class="max-w-full max-h-full object-contain">
+                        </div>
+                        
+                        <div class="px-2 mb-5">
+                            <p class="text-[10px] font-black text-[#f59e0b] uppercase tracking-widest mb-1">Repuesto Original</p>
+                            <p class="text-sm font-bold text-zinc-300 truncate" title="{{ imagen }}">{{ imagen }}</p>
+                        </div>
+                        
+                        <a href="/download/{{ imagen }}" class="flex items-center justify-center gap-2 w-full bg-zinc-800 hover:bg-white hover:text-black text-white text-xs font-black py-4 rounded-2xl transition-all uppercase">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                            </svg>
+                            Descargar PNG
+                        </a>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="col-span-full py-32 text-center border-2 border-dashed border-white/5 rounded-[3rem]">
+                        <p class="text-zinc-700 font-black text-xl uppercase tracking-widest">No hay repuestos en el catálogo</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+    </main>
+
+    <footer class="mt-20 p-10 border-t border-white/5 text-center">
+        <p class="text-zinc-700 text-[10px] font-bold uppercase tracking-[0.3em]">Proevo Maintenance Management © 2026</p>
+    </footer>
+
+    <script>
+        function updateFileName() {
+            const input = document.getElementById('fileInput');
+            const display = document.getElementById('fileNameDisplay');
+            if (input.files.length > 0) {
+                display.innerText = "Seleccionado: " + input.files[0].name;
+                display.style.color = "#f59e0b";
+            }
+        }
+
+        async function procesarImagen() {
+            const fileInput = document.getElementById('fileInput');
+            const btn = document.getElementById('btnProcesar');
+            const statusText = document.getElementById('fileNameDisplay');
+
+            if (!fileInput.files[0]) {
+                alert("Primero seleccioná una foto.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            btn.disabled = true;
+            btn.innerText = "PROCESANDO...";
+            btn.style.opacity = "0.5";
+
+            try {
+                const response = await fetch('/remove-bg', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    statusText.innerText = "¡Imagen lista! Actualizando...";
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else {
+                    const err = await response.json();
+                    alert("Error: " + (err.error || "No se pudo procesar"));
+                    btn.disabled = false;
+                    btn.innerText = "PROCESAR IMAGEN";
+                    btn.style.opacity = "1";
+                }
+            } catch (error) {
+                alert("Error de conexión.");
+                btn.disabled = false;
+                btn.innerText = "PROCESAR IMAGEN";
+                btn.style.opacity = "1";
+            }
+        }
+    </script>
+</body>
+</html>
