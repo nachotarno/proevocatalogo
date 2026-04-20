@@ -2,3 +2,4 @@ flask
 remove-bg
 python-dotenv
 requests
+gunicorn
