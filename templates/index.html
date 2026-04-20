@@ -8,6 +8,7 @@
     <style>
         body { background-color: #0a0a0a; color: white; }
         .card-shadow { box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .proevo-gradient { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
     </style>
 </head>
 <body class="font-sans antialiased">
@@ -15,51 +16,38 @@
     <nav class="p-6 border-b border-white/5 flex justify-between items-center bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <h1 class="text-2xl font-black tracking-tighter uppercase italic text-white">PROEVO</h1>
         <div class="flex items-center gap-4 text-xs font-bold text-zinc-500">
-            <span>IA BACKGROUND REMOVER</span>
-            <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+            <span>SISTEMA DE CATÁLOGO IA</span>
+            <div class="w-1.5 h-1.5 rounded-full bg-[#f59e0b] animate-pulse"></div>
         </div>
     </nav>
 
     <main class="max-w-7xl mx-auto py-10 px-6">
         
-        <section class="mb-16 text-center">
-            <h2 class="text-5xl font-black mb-4">Procesar Repuesto</h2>
-            <p id="fileNameDisplay" class="text-zinc-500 mb-8 font-medium">Seleccioná la imagen original del producto</p>
+        <section class="mb-16 text-center bg-[#111] border border-white/5 p-12 rounded-[3rem] card-shadow">
+            <h2 class="text-5xl font-black mb-4 tracking-tighter">Procesar Repuesto</h2>
+            <p id="fileNameDisplay" class="text-zinc-500 mb-8 font-medium">Seleccioná la imagen para quitar el fondo y aplicar formato</p>
             
-            <div class="flex flex-col items-center gap-4">
+            <div class="flex flex-col items-center gap-6">
                 <input type="file" id="fileInput" class="hidden" onchange="updateFileName()">
-                <label for="fileInput" class="cursor-pointer bg-white text-black px-10 py-4 rounded-full font-bold hover:scale-105 transition-transform active:scale-95">
-                    SELECCIONAR ARCHIVO
+                
+                <label for="fileInput" class="cursor-pointer border-2 border-dashed border-zinc-700 px-12 py-6 rounded-3xl font-bold text-zinc-400 hover:border-[#f59e0b] hover:text-white transition-all">
+                    Hacé click para elegir la foto
                 </label>
-                <button onclick="procesarImagen()" class="bg-[#f59e0b] px-10 py-4 rounded-full font-extrabold hover:brightness-110 transition-all">
+
+                <button onclick="procesarImagen()" id="btnProcesar" class="proevo-gradient px-14 py-5 rounded-full font-black text-black uppercase tracking-widest hover:scale-105 transition-transform active:scale-95 shadow-xl shadow-orange-900/20">
                     PROCESAR IMAGEN
                 </button>
             </div>
         </section>
 
         <section>
-            <h3 class="text-3xl font-black mb-8 border-l-4 border-[#f59e0b] pl-4 uppercase tracking-tighter">Galería de Repuestos</h3>
+            <div class="flex items-center justify-between mb-10">
+                <h3 class="text-3xl font-black border-l-4 border-[#f59e0b] pl-4 uppercase tracking-tighter">Galería de Repuestos</h3>
+                <span class="text-zinc-600 text-sm font-bold uppercase tracking-widest">Vista Previa</span>
+            </div>
             
-            <div id="catalogoImagenes" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div id="catalogoImagenes" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                 {% if imagenes %}
                     {% for imagen in imagenes %}
-                    <div class="bg-[#111] border border-white/5 p-4 rounded-3xl card-shadow group">
-                        <div class="aspect-square rounded-2xl bg-black mb-4 overflow-hidden flex items-center justify-center p-6">
-                            <img src="{{ url_for('static', filename='processed/' + imagen) }}" alt="Repuesto" class="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-500">
-                        </div>
-                        <p class="text-[10px] font-black text-zinc-600 uppercase mb-1">PROEVO SPARE PARTS</p>
-                        <p class="text-sm font-bold text-zinc-200 truncate">{{ imagen }}</p>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="col-span-full py-20 text-center border-2 border-dashed border-white/5 rounded-3xl">
-                        <p class="text-zinc-600 font-bold uppercase tracking-widest">No hay imágenes procesadas aún</p>
-                    </div>
-                {% endif %}
-            </div>
-        </section>
-    </main>
-
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+                    <div class="bg-[#151515] border border-white/5 p-5 rounded-[2.5rem] card-shadow transition-all hover:border-white/20">
+                        <div class="aspect-square rounded-[1.5rem] bg-white mb-5 overflow-hidden flex items-
