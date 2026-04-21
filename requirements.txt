@@ -3,3 +3,4 @@ pillow
 gunicorn
 requests
 reportlab
+cloudinary
