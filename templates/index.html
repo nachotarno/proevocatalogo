@@ -1,42 +1,109 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Proevo Catálogo</title>
+
 <script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body {
+    background: #0a0a0a;
+}
+.card {
+    background: #181818;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+</style>
+
 </head>
 
-<body class="bg-black text-white p-6">
+<body class="text-white">
 
-<h1 class="text-2xl mb-6">CATÁLOGO PROEVO</h1>
+<!-- HEADER -->
+<header class="p-6 border-b border-white/10 flex justify-between items-center">
+    <h1 class="text-2xl font-bold">PROEVO CATÁLOGO</h1>
 
-<form action="/upload" method="post" enctype="multipart/form-data">
-<input type="file" name="file" multiple class="mb-4">
-<button class="bg-yellow-500 px-4 py-2">SUBIR</button>
-</form>
+    <div class="flex gap-4 text-sm">
+        <a href="/export" class="text-green-400 hover:underline">PDF</a>
+        <a href="/export-excel" class="text-blue-400 hover:underline">Excel</a>
+    </div>
+</header>
 
-<a href="/export" class="block my-4 text-green-400">EXPORTAR PDF</a>
+<main class="max-w-7xl mx-auto p-6">
 
-<div class="grid grid-cols-3 gap-6">
+<!-- SUBIDA -->
+<section class="mb-10 card p-6 rounded-xl">
+    <h2 class="text-xl mb-4 font-bold">Subir imágenes</h2>
+
+    <form action="/upload" method="post" enctype="multipart/form-data" class="flex flex-col gap-4">
+        <input type="file" name="file" multiple class="text-white">
+        <button class="bg-yellow-500 text-black font-bold px-6 py-2 rounded">
+            SUBIR Y PROCESAR
+        </button>
+    </form>
+</section>
+
+<!-- CATALOGO -->
+<section>
+
+<h2 class="text-xl mb-6 font-bold">Productos</h2>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
 
 {% for p in productos %}
-<div class="bg-zinc-900 p-4">
+<div class="card p-4 rounded-xl flex flex-col justify-between">
 
-<img src="{{ url_for('static', filename='processed/' + p[5]) }}">
+    <!-- imagen -->
+    <div class="bg-white rounded-lg p-3 mb-4 flex items-center justify-center h-52">
+        <img src="{{ url_for('static', filename='processed/' + p[5]) }}" class="max-h-full object-contain">
+    </div>
 
-<p>{{ p[2] }}</p>
-<p class="text-sm text-gray-400">{{ p[3] }}</p>
+    <!-- info -->
+    <div class="mb-3">
+        <p class="font-bold text-yellow-400 text-sm">{{ p[2] }}</p>
+        <p class="text-xs text-gray-400">{{ p[3] }}</p>
+    </div>
 
-<form action="/precio/{{p[0]}}" method="post">
-<input name="precio" placeholder="Precio" value="{{p[4]}}" class="text-black w-full">
-<button class="bg-blue-500 w-full mt-2">Guardar</button>
-</form>
+    <!-- link cloud -->
+    <a href="{{p[6]}}" target="_blank" class="text-green-400 text-xs mb-2 hover:underline">
+        Ver imagen original
+    </a>
 
-<a href="/download/{{p[5]}}" class="block mt-2 text-green-400">Descargar</a>
-<a href="/delete/{{p[0]}}" class="block text-red-400">Eliminar</a>
+    <!-- precio -->
+    <form action="/precio/{{p[0]}}" method="post" class="mb-2">
+        <input 
+            name="precio" 
+            placeholder="Precio" 
+            value="{{p[4]}}" 
+            class="w-full p-2 text-black rounded mb-2"
+        >
+        <button class="w-full bg-blue-500 py-1 text-sm rounded">
+            Guardar
+        </button>
+    </form>
+
+    <!-- acciones -->
+    <div class="flex justify-between text-xs mt-2">
+        <a href="/download/{{p[5]}}" class="text-green-400 hover:underline">
+            Descargar
+        </a>
+
+        <a href="/delete/{{p[0]}}" class="text-red-400 hover:underline">
+            Eliminar
+        </a>
+    </div>
 
 </div>
 {% endfor %}
 
 </div>
+
+</section>
+
+</main>
 
 </body>
 </html>
