@@ -3,11 +3,10 @@ import os, io, sqlite3
 import requests
 from PIL import Image, ImageDraw, ImageFilter
 from werkzeug.utils import secure_filename
-from reportlab.platypus import SimpleDocTemplate, Image as RLImage, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.pagesizes import letter
 from openpyxl import Workbook
 
-# --- Cloudinary ---
 import cloudinary
 import cloudinary.uploader
 
@@ -23,7 +22,7 @@ os.makedirs(PROCESSED, exist_ok=True)
 
 API_KEY = os.environ.get("REMOVE_BG_API_KEY")
 
-# --- config cloudinary ---
+# ---------- CLOUDINARY ----------
 cloudinary.config(
     cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
     api_key=os.environ.get("CLOUDINARY_API_KEY"),
@@ -58,42 +57,54 @@ def separar(nombre):
     desc = partes[1] if len(partes) > 1 else ""
     return codigo, desc
 
-# ---------- REMOVE BG ----------
+# ---------- REMOVE BG (SEGURO) ----------
 def remove_bg(path):
-    with open(path, "rb") as f:
-        res = requests.post(
-            "https://api.remove.bg/v1.0/removebg",
-            files={"image_file": f},
-            headers={"X-Api-Key": API_KEY},
-        )
-    if res.status_code != 200:
-        raise Exception(res.text)
-    return res.content
+    try:
+        with open(path, "rb") as f:
+            res = requests.post(
+                "https://api.remove.bg/v1.0/removebg",
+                files={"image_file": f},
+                headers={"X-Api-Key": API_KEY},
+            )
+
+        if res.status_code != 200:
+            print("REMOVE.BG ERROR:", res.text)
+            return open(path, "rb").read()
+
+        return res.content
+
+    except Exception as e:
+        print("ERROR REMOVE.BG:", e)
+        return open(path, "rb").read()
 
 # ---------- PROCESAR ----------
 def procesar(path, output):
-    img_bytes = remove_bg(path)
-    prod = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    try:
+        img_bytes = remove_bg(path)
+        prod = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-    bbox = prod.getbbox()
-    if bbox:
-        prod = prod.crop(bbox)
+        bbox = prod.getbbox()
+        if bbox:
+            prod = prod.crop(bbox)
 
-    canvas = Image.new("RGBA", (1000,1000), (0,0,0,0))
+        canvas = Image.new("RGBA", (1000,1000), (0,0,0,0))
 
-    prod.thumbnail((700,700))
-    x = (1000 - prod.width)//2
-    y = (1000 - prod.height)//2 - 40
+        prod.thumbnail((700,700))
+        x = (1000 - prod.width)//2
+        y = (1000 - prod.height)//2 - 40
 
-    shadow = Image.new("RGBA", prod.size, (0,0,0,0))
-    draw = ImageDraw.Draw(shadow)
-    draw.ellipse((50, prod.height*0.7, prod.width-50, prod.height), fill=(0,0,0,120))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(25))
+        shadow = Image.new("RGBA", prod.size, (0,0,0,0))
+        draw = ImageDraw.Draw(shadow)
+        draw.ellipse((50, prod.height*0.7, prod.width-50, prod.height), fill=(0,0,0,120))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(25))
 
-    canvas.paste(shadow, (x, y+40), shadow)
-    canvas.paste(prod, (x,y), prod)
+        canvas.paste(shadow, (x, y+40), shadow)
+        canvas.paste(prod, (x,y), prod)
 
-    canvas.save(output, "PNG")
+        canvas.save(output, "PNG")
+
+    except Exception as e:
+        print("ERROR PROCESAR:", e)
 
 # ---------- ROUTES ----------
 @app.route("/")
@@ -103,100 +114,144 @@ def index():
     conn.close()
     return render_template("index.html", productos=productos)
 
+# ---------- UPLOAD (BLINDADO) ----------
 @app.route("/upload", methods=["POST"])
 def upload():
-    files = request.files.getlist("file")
+    try:
+        files = request.files.getlist("file")
 
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+        if not files:
+            return redirect("/")
 
-    for f in files:
-        name = secure_filename(f.filename)
-        up = os.path.join(UPLOAD, name)
-        f.save(up)
+        conn = sqlite3.connect(DB)
+        c = conn.cursor()
 
-        out = os.path.join(PROCESSED, name)
-        procesar(up, out)
+        for f in files:
+            try:
+                name = secure_filename(f.filename)
 
-        # ☁️ subir a cloudinary
-        result = cloudinary.uploader.upload(out)
-        url = result["secure_url"]
+                up = os.path.join(UPLOAD, name)
+                f.save(up)
 
-        codigo, desc = separar(name)
+                out = os.path.join(PROCESSED, name)
 
-        c.execute("INSERT INTO productos (nombre,codigo,descripcion,precio,imagen,url) VALUES (?,?,?,?,?,?)",
-                  (name, codigo, desc, "", name, url))
+                procesar(up, out)
 
-    conn.commit()
-    conn.close()
+                # Cloudinary seguro
+                try:
+                    result = cloudinary.uploader.upload(out)
+                    url = result["secure_url"]
+                except Exception as e:
+                    print("CLOUDINARY ERROR:", e)
+                    url = ""
 
-    return redirect("/")
+                codigo, desc = separar(name)
 
+                c.execute("""
+                INSERT INTO productos (nombre,codigo,descripcion,precio,imagen,url)
+                VALUES (?,?,?,?,?,?)
+                """, (name, codigo, desc, "", name, url))
+
+            except Exception as e:
+                print("ERROR ARCHIVO:", e)
+
+        conn.commit()
+        conn.close()
+
+        return redirect("/")
+
+    except Exception as e:
+        print("ERROR GENERAL:", e)
+        return redirect("/")
+
+# ---------- PRECIO ----------
 @app.route("/precio/<int:id>", methods=["POST"])
 def precio(id):
-    precio = request.form.get("precio")
+    try:
+        precio = request.form.get("precio")
 
-    conn = sqlite3.connect(DB)
-    conn.execute("UPDATE productos SET precio=? WHERE id=?", (precio,id))
-    conn.commit()
-    conn.close()
+        conn = sqlite3.connect(DB)
+        conn.execute("UPDATE productos SET precio=? WHERE id=?", (precio,id))
+        conn.commit()
+        conn.close()
 
-    return redirect("/")
+        return redirect("/")
 
+    except Exception as e:
+        print("ERROR PRECIO:", e)
+        return redirect("/")
+
+# ---------- DELETE ----------
 @app.route("/delete/<int:id>")
 def delete(id):
-    conn = sqlite3.connect(DB)
-    conn.execute("DELETE FROM productos WHERE id=?", (id,))
-    conn.commit()
-    conn.close()
-    return redirect("/")
+    try:
+        conn = sqlite3.connect(DB)
+        conn.execute("DELETE FROM productos WHERE id=?", (id,))
+        conn.commit()
+        conn.close()
+        return redirect("/")
+    except:
+        return redirect("/")
 
+# ---------- DOWNLOAD ----------
 @app.route("/download/<filename>")
 def download(filename):
-    return send_file(os.path.join(PROCESSED, filename), as_attachment=True)
+    try:
+        return send_file(os.path.join(PROCESSED, filename), as_attachment=True)
+    except:
+        return redirect("/")
 
 # ---------- EXPORT PDF ----------
 @app.route("/export")
 def export():
-    pdf_path = os.path.join(BASE_DIR, "catalogo.pdf")
+    try:
+        pdf_path = os.path.join(BASE_DIR, "catalogo.pdf")
 
-    doc = SimpleDocTemplate(pdf_path, pagesize=letter)
-    elements = []
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        elements = []
 
-    conn = sqlite3.connect(DB)
-    productos = conn.execute("SELECT * FROM productos").fetchall()
-    conn.close()
+        conn = sqlite3.connect(DB)
+        productos = conn.execute("SELECT * FROM productos").fetchall()
+        conn.close()
 
-    for p in productos:
-        elements.append(Paragraph(f"{p[2]} - {p[3]}"))
-        elements.append(Paragraph(f"Precio: {p[4]}"))
-        elements.append(Paragraph(f"Link: {p[6]}"))
-        elements.append(Spacer(1,20))
+        for p in productos:
+            elements.append(Paragraph(f"{p[2]} - {p[3]}"))
+            elements.append(Paragraph(f"Precio: {p[4]}"))
+            elements.append(Paragraph(f"Link: {p[6]}"))
+            elements.append(Spacer(1,20))
 
-    doc.build(elements)
+        doc.build(elements)
 
-    return send_file(pdf_path, as_attachment=True)
+        return send_file(pdf_path, as_attachment=True)
 
-# ---------- EXPORT EXCEL PRO ----------
+    except Exception as e:
+        print("ERROR PDF:", e)
+        return redirect("/")
+
+# ---------- EXPORT EXCEL ----------
 @app.route("/export-excel")
 def export_excel():
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Catalogo"
+    try:
+        wb = Workbook()
+        ws = wb.active
 
-    ws.append(["CODIGO", "DESCRIPCION", "PRECIO", "LINK"])
+        ws.append(["CODIGO", "DESCRIPCION", "PRECIO", "LINK"])
 
-    conn = sqlite3.connect(DB)
-    productos = conn.execute("SELECT * FROM productos").fetchall()
-    conn.close()
+        conn = sqlite3.connect(DB)
+        productos = conn.execute("SELECT * FROM productos").fetchall()
+        conn.close()
 
-    for p in productos:
-        ws.append([p[2], p[3], p[4], p[6]])
+        for p in productos:
+            ws.append([p[2], p[3], p[4], p[6]])
 
-    file_path = os.path.join(BASE_DIR, "catalogo.xlsx")
-    wb.save(file_path)
+        file_path = os.path.join(BASE_DIR, "catalogo.xlsx")
+        wb.save(file_path)
 
-    return send_file(file_path, as_attachment=True)
+        return send_file(file_path, as_attachment=True)
+
+    except Exception as e:
+        print("ERROR EXCEL:", e)
+        return redirect("/")
 
 # ---------- RUN ----------
 if __name__ == "__main__":
