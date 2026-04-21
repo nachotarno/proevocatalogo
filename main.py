@@ -1,158 +1,168 @@
-from flask import Flask, render_template, request, send_file, abort
-import os, io
+from flask import Flask, render_template, request, send_file, redirect
+import os, io, sqlite3
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from werkzeug.utils import secure_filename
+from reportlab.platypus import SimpleDocTemplate, Image as RLImage, Paragraph, Spacer
+from reportlab.lib.pagesizes import letter
 
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD = os.path.join(BASE_DIR, "static/uploads")
 PROCESSED = os.path.join(BASE_DIR, "static/processed")
+DB = os.path.join(BASE_DIR, "catalogo.db")
 
 os.makedirs(UPLOAD, exist_ok=True)
 os.makedirs(PROCESSED, exist_ok=True)
 
 API_KEY = os.environ.get("REMOVE_BG_API_KEY")
 
+# ---------- DB ----------
+def init_db():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS productos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT,
+        codigo TEXT,
+        descripcion TEXT,
+        precio TEXT,
+        imagen TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
 
-def cargar_fuente(size=28):
-    try:
-        return ImageFont.truetype("arial.ttf", size)
-    except:
-        return ImageFont.load_default()
+init_db()
 
+# ---------- UTIL ----------
+def separar(nombre):
+    base = os.path.splitext(nombre)[0].replace("_", " ").upper()
+    partes = base.split(" ", 1)
+    codigo = partes[0]
+    desc = partes[1] if len(partes) > 1 else ""
+    return codigo, desc
 
-def limpiar_nombre(nombre):
-    base = os.path.splitext(nombre)[0]
-    base = base.replace("_", " ").replace("-", " ")
-    return base.upper()
-
-
-def quitar_fondo_removebg(image_path):
-    with open(image_path, "rb") as img_file:
-        response = requests.post(
+# ---------- REMOVE BG ----------
+def remove_bg(path):
+    with open(path, "rb") as f:
+        res = requests.post(
             "https://api.remove.bg/v1.0/removebg",
-            files={"image_file": img_file},
-            data={"size": "auto"},
+            files={"image_file": f},
             headers={"X-Api-Key": API_KEY},
         )
+    if res.status_code != 200:
+        raise Exception(res.text)
+    return res.content
 
-    if response.status_code != 200:
-        raise Exception(f"Remove.bg error: {response.text}")
+# ---------- PROCESAR ----------
+def procesar(path, output):
+    img_bytes = remove_bg(path)
+    prod = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-    return response.content
+    bbox = prod.getbbox()
+    if bbox:
+        prod = prod.crop(bbox)
 
+    canvas = Image.new("RGBA", (1000,1000), (0,0,0,0))
 
-def procesar(imagen_path, output_path):
-    try:
-        img_bytes = quitar_fondo_removebg(imagen_path)
+    prod.thumbnail((700,700))
+    x = (1000 - prod.width)//2
+    y = (1000 - prod.height)//2 - 40
 
-        producto = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    # sombra
+    shadow = Image.new("RGBA", prod.size, (0,0,0,0))
+    draw = ImageDraw.Draw(shadow)
+    draw.ellipse((50, prod.height*0.7, prod.width-50, prod.height), fill=(0,0,0,120))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(25))
 
-        bbox = producto.getbbox()
-        if bbox:
-            producto = producto.crop(bbox)
+    canvas.paste(shadow, (x, y+40), shadow)
+    canvas.paste(prod, (x,y), prod)
 
-        W, H = 1000, 1000
-        canvas = Image.new("RGBA", (W, H), (255, 255, 255, 255))
+    canvas.save(output, "PNG")
 
-        producto.thumbnail((700, 700))
-
-        x = (W - producto.width) // 2
-        y = (H - producto.height) // 2 - 40
-
-        shadow = Image.new("RGBA", producto.size, (0, 0, 0, 0))
-        draw_shadow = ImageDraw.Draw(shadow)
-
-        draw_shadow.ellipse(
-            (producto.width*0.1, producto.height*0.75, producto.width*0.9, producto.height*0.95),
-            fill=(0, 0, 0, 120)
-        )
-
-        shadow = shadow.filter(ImageFilter.GaussianBlur(30))
-        canvas.paste(shadow, (x, y + 50), shadow)
-
-        canvas.paste(producto, (x, y), producto)
-
-        draw = ImageDraw.Draw(canvas)
-
-        texto = limpiar_nombre(os.path.basename(imagen_path))
-
-        if len(texto) > 45:
-            texto = texto[:42] + "..."
-
-        font = cargar_fuente(30)
-
-        # 🔥 FIX NUEVO
-        bbox = draw.textbbox((0, 0), texto, font=font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-
-        draw.text(
-            ((W - tw) / 2, H - 80),
-            texto,
-            fill=(50, 50, 50),
-            font=font
-        )
-
-        logo_path = os.path.join(BASE_DIR, "static/logo.png")
-
-        if os.path.exists(logo_path):
-            logo = Image.open(logo_path).convert("RGBA")
-            logo.thumbnail((200, 60))
-            canvas.paste(logo, (W - logo.width - 30, 30), logo)
-
-        canvas.convert("RGB").save(output_path, "PNG")
-
-    except Exception as e:
-        print("ERROR PROCESANDO:", e)
-        raise e
-
-
+# ---------- ROUTES ----------
 @app.route("/")
 def index():
-    files = os.listdir(PROCESSED)
-    return render_template("index.html", imagenes=files)
+    conn = sqlite3.connect(DB)
+    productos = conn.execute("SELECT * FROM productos").fetchall()
+    conn.close()
+    return render_template("index.html", productos=productos)
 
+@app.route("/upload", methods=["POST"])
+def upload():
+    files = request.files.getlist("file")
 
-@app.route("/remove-bg", methods=["POST"])
-def remove_bg():
-    try:
-        file = request.files.get("file")
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
 
-        if not file:
-            return {"error": "no file"}, 400
+    for f in files:
+        name = secure_filename(f.filename)
+        up = os.path.join(UPLOAD, name)
+        f.save(up)
 
-        if not API_KEY:
-            return {"error": "Falta API KEY remove.bg"}, 500
+        out = os.path.join(PROCESSED, name)
+        procesar(up, out)
 
-        filename = secure_filename(file.filename)
+        codigo, desc = separar(name)
 
-        upload_path = os.path.join(UPLOAD, filename)
-        file.save(upload_path)
+        c.execute("INSERT INTO productos (nombre,codigo,descripcion,precio,imagen) VALUES (?,?,?,?,?)",
+                  (name, codigo, desc, "", name))
 
-        output_path = os.path.join(PROCESSED, filename)
+    conn.commit()
+    conn.close()
 
-        procesar(upload_path, output_path)
+    return redirect("/")
 
-        return {"ok": True}
+@app.route("/precio/<int:id>", methods=["POST"])
+def precio(id):
+    precio = request.form.get("precio")
 
-    except Exception as e:
-        print("ERROR:", e)
-        return {"error": str(e)}, 500
+    conn = sqlite3.connect(DB)
+    conn.execute("UPDATE productos SET precio=? WHERE id=?", (precio,id))
+    conn.commit()
+    conn.close()
 
+    return redirect("/")
+
+@app.route("/delete/<int:id>")
+def delete(id):
+    conn = sqlite3.connect(DB)
+    conn.execute("DELETE FROM productos WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+    return redirect("/")
 
 @app.route("/download/<filename>")
 def download(filename):
-    path = os.path.join(PROCESSED, filename)
+    return send_file(os.path.join(PROCESSED, filename), as_attachment=True)
 
-    if not os.path.exists(path):
-        return abort(404)
+@app.route("/export")
+def export():
+    pdf_path = os.path.join(BASE_DIR, "catalogo.pdf")
 
-    return send_file(path, as_attachment=True)
+    doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+    elements = []
 
+    conn = sqlite3.connect(DB)
+    productos = conn.execute("SELECT * FROM productos").fetchall()
+    conn.close()
 
+    for p in productos:
+        img_path = os.path.join(PROCESSED, p[5])
+
+        elements.append(RLImage(img_path, width=200, height=200))
+        elements.append(Paragraph(f"{p[2]} - {p[3]}"))
+        elements.append(Paragraph(f"Precio: {p[4]}"))
+        elements.append(Spacer(1,20))
+
+    doc.build(elements)
+
+    return send_file(pdf_path, as_attachment=True)
+
+# ---------- RUN ----------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
