@@ -16,7 +16,6 @@ os.makedirs(PROCESSED, exist_ok=True)
 API_KEY = os.environ.get("REMOVE_BG_API_KEY")
 
 
-# ---------- UTIL ----------
 def cargar_fuente(size=28):
     try:
         return ImageFont.truetype("arial.ttf", size)
@@ -30,7 +29,6 @@ def limpiar_nombre(nombre):
     return base.upper()
 
 
-# ---------- REMOVE BG (API PRO) ----------
 def quitar_fondo_removebg(image_path):
     with open(image_path, "rb") as img_file:
         response = requests.post(
@@ -46,20 +44,16 @@ def quitar_fondo_removebg(image_path):
     return response.content
 
 
-# ---------- PROCESO CATÁLOGO ----------
 def procesar(imagen_path, output_path):
     try:
-        # 1️⃣ quitar fondo PRO
         img_bytes = quitar_fondo_removebg(imagen_path)
 
         producto = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-        # 2️⃣ recorte automático
         bbox = producto.getbbox()
         if bbox:
             producto = producto.crop(bbox)
 
-        # 3️⃣ canvas
         W, H = 1000, 1000
         canvas = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
@@ -68,7 +62,6 @@ def procesar(imagen_path, output_path):
         x = (W - producto.width) // 2
         y = (H - producto.height) // 2 - 40
 
-        # 4️⃣ sombra pro
         shadow = Image.new("RGBA", producto.size, (0, 0, 0, 0))
         draw_shadow = ImageDraw.Draw(shadow)
 
@@ -80,12 +73,10 @@ def procesar(imagen_path, output_path):
         shadow = shadow.filter(ImageFilter.GaussianBlur(30))
         canvas.paste(shadow, (x, y + 50), shadow)
 
-        # 5️⃣ pegar producto
         canvas.paste(producto, (x, y), producto)
 
         draw = ImageDraw.Draw(canvas)
 
-        # 6️⃣ texto
         texto = limpiar_nombre(os.path.basename(imagen_path))
 
         if len(texto) > 45:
@@ -93,7 +84,10 @@ def procesar(imagen_path, output_path):
 
         font = cargar_fuente(30)
 
-        tw, th = draw.textsize(texto, font=font)
+        # 🔥 FIX NUEVO
+        bbox = draw.textbbox((0, 0), texto, font=font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
 
         draw.text(
             ((W - tw) / 2, H - 80),
@@ -102,7 +96,6 @@ def procesar(imagen_path, output_path):
             font=font
         )
 
-        # 7️⃣ logo
         logo_path = os.path.join(BASE_DIR, "static/logo.png")
 
         if os.path.exists(logo_path):
@@ -110,7 +103,6 @@ def procesar(imagen_path, output_path):
             logo.thumbnail((200, 60))
             canvas.paste(logo, (W - logo.width - 30, 30), logo)
 
-        # 8️⃣ guardar
         canvas.convert("RGB").save(output_path, "PNG")
 
     except Exception as e:
@@ -118,7 +110,6 @@ def procesar(imagen_path, output_path):
         raise e
 
 
-# ---------- ROUTES ----------
 @app.route("/")
 def index():
     files = os.listdir(PROCESSED)
@@ -162,7 +153,6 @@ def download(filename):
     return send_file(path, as_attachment=True)
 
 
-# ---------- RUN ----------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
