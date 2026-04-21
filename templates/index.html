@@ -1,152 +1,42 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Proevo</title>
-
 <script src="https://cdn.tailwindcss.com"></script>
-
-<style>
-body {
-    background: radial-gradient(circle at 20% 10%, #1a1a1a, #0a0a0a 60%);
-    color: white;
-}
-
-.card {
-    background: rgba(20,20,20,0.6);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.08);
-}
-
-.proevo {
-    background: linear-gradient(135deg, #f59e0b, #ff8c00);
-}
-</style>
 </head>
 
-<body>
+<body class="bg-black text-white p-6">
 
-<nav class="p-6 flex justify-between bg-black/30 backdrop-blur border-b border-white/10">
-    <h1 class="font-black text-xl">PROEVO</h1>
-</nav>
+<h1 class="text-2xl mb-6">CATÁLOGO PROEVO</h1>
 
-<main class="max-w-5xl mx-auto p-6">
+<form action="/upload" method="post" enctype="multipart/form-data">
+<input type="file" name="file" multiple class="mb-4">
+<button class="bg-yellow-500 px-4 py-2">SUBIR</button>
+</form>
 
-<section class="card p-10 rounded-3xl text-center mb-12">
+<a href="/export" class="block my-4 text-green-400">EXPORTAR PDF</a>
 
-<h2 class="text-3xl font-black mb-6">Subir Imagen</h2>
+<div class="grid grid-cols-3 gap-6">
 
-<p id="fileNameDisplay" class="text-zinc-400 mb-6">Arrastrá o elegí imagen</p>
+{% for p in productos %}
+<div class="bg-zinc-900 p-4">
 
-<div id="dropZone" class="border-2 border-dashed border-zinc-600 p-10 rounded-xl cursor-pointer">
+<img src="{{ url_for('static', filename='processed/' + p[5]) }}">
 
-<input type="file" id="fileInput" class="hidden">
+<p>{{ p[2] }}</p>
+<p class="text-sm text-gray-400">{{ p[3] }}</p>
 
-<p>Click o arrastrar</p>
+<form action="/precio/{{p[0]}}" method="post">
+<input name="precio" placeholder="Precio" value="{{p[4]}}" class="text-black w-full">
+<button class="bg-blue-500 w-full mt-2">Guardar</button>
+</form>
 
-<img id="preview" class="hidden mt-4 mx-auto max-h-40"/>
-
-</div>
-
-<button onclick="procesarImagen()" id="btnProcesar"
-class="proevo mt-6 px-10 py-4 rounded-full font-bold text-black">
-PROCESAR
-</button>
-
-</section>
-
-<div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-
-{% for imagen in imagenes %}
-<div class="card p-4 rounded-2xl text-center">
-
-<img src="{{ url_for('static', filename='processed/' + imagen) }}" class="mx-auto mb-3">
-
-<p class="text-sm text-zinc-400">{{ imagen }}</p>
-
-<a href="/download/{{ imagen }}" class="block mt-3 bg-zinc-800 p-2 rounded">
-Descargar
-</a>
+<a href="/download/{{p[5]}}" class="block mt-2 text-green-400">Descargar</a>
+<a href="/delete/{{p[0]}}" class="block text-red-400">Eliminar</a>
 
 </div>
 {% endfor %}
 
 </div>
-
-</main>
-
-<script>
-const dropZone = document.getElementById("dropZone");
-const input = document.getElementById("fileInput");
-const preview = document.getElementById("preview");
-
-dropZone.onclick = () => input.click();
-
-input.onchange = () => handleFile();
-
-dropZone.ondragover = e => {
-    e.preventDefault();
-};
-
-dropZone.ondrop = e => {
-    e.preventDefault();
-    input.files = e.dataTransfer.files;
-    handleFile();
-};
-
-function handleFile() {
-    const file = input.files[0];
-    if (!file) return;
-
-    preview.src = URL.createObjectURL(file);
-    preview.classList.remove("hidden");
-
-    document.getElementById("fileNameDisplay").innerText = file.name;
-}
-
-async function procesarImagen() {
-    const fileInput = document.getElementById('fileInput');
-    const btn = document.getElementById('btnProcesar');
-    const status = document.getElementById('fileNameDisplay');
-
-    if (!fileInput.files[0]) {
-        alert("Subí una imagen primero");
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    btn.disabled = true;
-    btn.innerText = "PROCESANDO...";
-    status.innerText = "Procesando imagen...";
-
-    try {
-        const response = await fetch('/remove-bg', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (response.ok) {
-            status.innerText = "Imagen procesada ✔";
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
-        } else {
-            const error = await response.text();
-            alert("Error: " + error);
-            btn.disabled = false;
-            btn.innerText = "PROCESAR";
-        }
-
-    } catch (err) {
-        alert("Error de conexión");
-        btn.disabled = false;
-        btn.innerText = "PROCESAR";
-    }
-}
-</script>
 
 </body>
 </html>
