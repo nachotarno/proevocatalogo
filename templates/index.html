@@ -1,109 +1,153 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>Proevo Catálogo</title>
-
-<script src="https://cdn.tailwindcss.com"></script>
-
-<style>
-body {
-    background: #0a0a0a;
-}
-.card {
-    background: #181818;
-    border: 1px solid rgba(255,255,255,0.05);
-}
-</style>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROEVO CATÁLOGO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: #0b0b0b;
+        }
+        .card {
+            background: #171717;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        }
+    </style>
 </head>
+<body class="text-white min-h-screen">
 
-<body class="text-white">
+    <header class="border-b border-white/10 bg-black/40 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+                <h1 class="text-2xl font-black tracking-tight">PROEVO CATÁLOGO</h1>
+                <p class="text-sm text-zinc-400">Sistema de procesamiento y catálogo de repuestos</p>
+            </div>
 
-<!-- HEADER -->
-<header class="p-6 border-b border-white/10 flex justify-between items-center">
-    <h1 class="text-2xl font-bold">PROEVO CATÁLOGO</h1>
+            <div class="flex flex-wrap gap-3">
+                <a href="/export" class="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 transition font-semibold">
+                    Exportar PDF
+                </a>
+                <a href="/export-excel" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition font-semibold">
+                    Exportar Excel
+                </a>
+            </div>
+        </div>
+    </header>
 
-    <div class="flex gap-4 text-sm">
-        <a href="/export" class="text-green-400 hover:underline">PDF</a>
-        <a href="/export-excel" class="text-blue-400 hover:underline">Excel</a>
-    </div>
-</header>
+    <main class="max-w-7xl mx-auto px-6 py-8">
 
-<main class="max-w-7xl mx-auto p-6">
+        <section class="card rounded-2xl p-6 mb-8">
+            <h2 class="text-xl font-bold mb-4">Subir imágenes</h2>
 
-<!-- SUBIDA -->
-<section class="mb-10 card p-6 rounded-xl">
-    <h2 class="text-xl mb-4 font-bold">Subir imágenes</h2>
+            <form action="/upload" method="post" enctype="multipart/form-data" class="flex flex-col gap-4">
+                <input
+                    type="file"
+                    name="file"
+                    multiple
+                    class="block w-full text-sm text-zinc-300
+                           file:mr-4 file:py-2 file:px-4
+                           file:rounded-lg file:border-0
+                           file:text-sm file:font-semibold
+                           file:bg-yellow-500 file:text-black
+                           hover:file:bg-yellow-400"
+                >
 
-    <form action="/upload" method="post" enctype="multipart/form-data" class="flex flex-col gap-4">
-        <input type="file" name="file" multiple class="text-white">
-        <button class="bg-yellow-500 text-black font-bold px-6 py-2 rounded">
-            SUBIR Y PROCESAR
-        </button>
-    </form>
-</section>
+                <button
+                    type="submit"
+                    class="w-full md:w-fit px-6 py-3 rounded-xl bg-yellow-500 text-black font-black hover:bg-yellow-400 transition"
+                >
+                    SUBIR Y PROCESAR
+                </button>
+            </form>
+        </section>
 
-<!-- CATALOGO -->
-<section>
+        <section>
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-bold">Productos cargados</h2>
+                <span class="text-sm text-zinc-400">{{ productos|length }} productos</span>
+            </div>
 
-<h2 class="text-xl mb-6 font-bold">Productos</h2>
+            {% if productos %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {% for p in productos %}
+                <div class="card rounded-2xl p-4 flex flex-col">
 
-<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    <div class="bg-white rounded-xl h-64 flex items-center justify-center p-4 mb-4 overflow-hidden">
+                        <img
+                            src="{{ url_for('static', filename='processed/' + p[5]) }}"
+                            alt="{{ p[2] }} - {{ p[3] }}"
+                            class="max-w-full max-h-full object-contain"
+                        >
+                    </div>
 
-{% for p in productos %}
-<div class="card p-4 rounded-xl flex flex-col justify-between">
+                    <div class="mb-3">
+                        <p class="text-yellow-400 font-black text-lg leading-tight">{{ p[2] }}</p>
+                        <p class="text-zinc-400 text-sm leading-snug break-words">{{ p[3] }}</p>
+                    </div>
 
-    <!-- imagen -->
-    <div class="bg-white rounded-lg p-3 mb-4 flex items-center justify-center h-52">
-        <img src="{{ url_for('static', filename='processed/' + p[5]) }}" class="max-h-full object-contain">
-    </div>
+                    <form action="/precio/{{ p[0] }}" method="post" class="mb-3">
+                        <label class="block text-xs uppercase tracking-wide text-zinc-400 mb-1">Precio</label>
+                        <input
+                            type="text"
+                            name="precio"
+                            value="{{ p[4] }}"
+                            placeholder="Ej: 25000"
+                            class="w-full rounded-lg bg-zinc-900 border border-white/10 px-3 py-2 text-white outline-none focus:border-yellow-500"
+                        >
+                        <button
+                            type="submit"
+                            class="mt-2 w-full rounded-lg bg-blue-600 hover:bg-blue-500 transition py-2 font-semibold"
+                        >
+                            Guardar precio
+                        </button>
+                    </form>
 
-    <!-- info -->
-    <div class="mb-3">
-        <p class="font-bold text-yellow-400 text-sm">{{ p[2] }}</p>
-        <p class="text-xs text-gray-400">{{ p[3] }}</p>
-    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-auto">
+                        <a
+                            href="/download/{{ p[5] }}"
+                            class="text-center rounded-lg bg-zinc-800 hover:bg-zinc-700 transition py-2 text-sm font-semibold"
+                        >
+                            Descargar
+                        </a>
 
-    <!-- link cloud -->
-    <a href="{{p[6]}}" target="_blank" class="text-green-400 text-xs mb-2 hover:underline">
-        Ver imagen original
-    </a>
+                        {% if p[6] %}
+                        <a
+                            href="{{ p[6] }}"
+                            target="_blank"
+                            class="text-center rounded-lg bg-green-700 hover:bg-green-600 transition py-2 text-sm font-semibold"
+                        >
+                            Ver cloud
+                        </a>
+                        {% else %}
+                        <span
+                            class="text-center rounded-lg bg-zinc-900 text-zinc-500 py-2 text-sm font-semibold"
+                        >
+                            Sin cloud
+                        </span>
+                        {% endif %}
 
-    <!-- precio -->
-    <form action="/precio/{{p[0]}}" method="post" class="mb-2">
-        <input 
-            name="precio" 
-            placeholder="Precio" 
-            value="{{p[4]}}" 
-            class="w-full p-2 text-black rounded mb-2"
-        >
-        <button class="w-full bg-blue-500 py-1 text-sm rounded">
-            Guardar
-        </button>
-    </form>
+                        <a
+                            href="/delete/{{ p[0] }}"
+                            class="col-span-2 text-center rounded-lg bg-red-700 hover:bg-red-600 transition py-2 text-sm font-semibold"
+                            onclick="return confirm('¿Eliminar este producto?')"
+                        >
+                            Eliminar
+                        </a>
+                    </div>
 
-    <!-- acciones -->
-    <div class="flex justify-between text-xs mt-2">
-        <a href="/download/{{p[5]}}" class="text-green-400 hover:underline">
-            Descargar
-        </a>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card rounded-2xl p-10 text-center">
+                <p class="text-zinc-400">Todavía no hay productos cargados.</p>
+            </div>
+            {% endif %}
+        </section>
 
-        <a href="/delete/{{p[0]}}" class="text-red-400 hover:underline">
-            Eliminar
-        </a>
-    </div>
-
-</div>
-{% endfor %}
-
-</div>
-
-</section>
-
-</main>
+    </main>
 
 </body>
 </html>
