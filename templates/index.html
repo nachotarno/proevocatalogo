@@ -3,151 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PROEVO CATÁLOGO</title>
+    <title>PROEVO - Catálogo de Repuestos</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            background: #0b0b0b;
+            background: #05070b;
+            color: white;
+        }
+        .panel {
+            background: linear-gradient(180deg, rgba(9,12,18,0.96), rgba(6,9,14,0.96));
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 10px 35px rgba(0,0,0,0.35);
         }
         .card {
-            background: #171717;
-            border: 1px solid rgba(255,255,255,0.06);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            background: linear-gradient(180deg, #0b1017, #090d14);
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.28);
+        }
+        .thumb-box {
+            background:
+                linear-gradient(45deg, #f1f1f1 25%, transparent 25%),
+                linear-gradient(-45deg, #f1f1f1 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #f1f1f1 75%),
+                linear-gradient(-45deg, transparent 75%, #f1f1f1 75%);
+            background-size: 22px 22px;
+            background-position: 0 0, 0 11px, 11px -11px, -11px 0px;
+            background-color: #ffffff;
         }
     </style>
 </head>
-<body class="text-white min-h-screen">
+<body class="min-h-screen">
 
-    <header class="border-b border-white/10 bg-black/40 backdrop-blur sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-                <h1 class="text-2xl font-black tracking-tight">PROEVO CATÁLOGO</h1>
-                <p class="text-sm text-zinc-400">Sistema de procesamiento y catálogo de repuestos</p>
+    <header class="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-[1600px] mx-auto px-5 py-4 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-5">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="PROEVO" class="h-10 object-contain">
+                <div>
+                    <h1 class="text-2xl font-black tracking-tight">CATÁLOGO DE REPUESTOS</h1>
+                </div>
             </div>
 
-            <div class="flex flex-wrap gap-3">
-                <a href="/export" class="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 transition font-semibold">
-                    Exportar PDF
-                </a>
-                <a href="/export-excel" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition font-semibold">
+            <div class="flex gap-3">
+                <a href="/export-excel" class="px-5 py-3 rounded-xl bg-green-600 hover:bg-green-500 transition font-bold">
                     Exportar Excel
                 </a>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-6 py-8">
+    <main class="max-w-[1600px] mx-auto p-5 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5">
 
-        <section class="card rounded-2xl p-6 mb-8">
-            <h2 class="text-xl font-bold mb-4">Subir imágenes</h2>
+        <aside class="space-y-5">
+            <section class="panel rounded-2xl p-4">
+                <h2 class="text-2xl font-black mb-4">SUBIR IMÁGENES</h2>
 
-            <form action="/upload" method="post" enctype="multipart/form-data" class="flex flex-col gap-4">
-                <input
-                    type="file"
-                    name="file"
-                    multiple
-                    class="block w-full text-sm text-zinc-300
-                           file:mr-4 file:py-2 file:px-4
-                           file:rounded-lg file:border-0
-                           file:text-sm file:font-semibold
-                           file:bg-yellow-500 file:text-black
-                           hover:file:bg-yellow-400"
-                >
+                <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-4">
+                    <label class="block border border-dashed border-white/15 rounded-2xl p-6 text-center cursor-pointer hover:border-yellow-400 transition">
+                        <input type="file" name="file" multiple class="hidden" onchange="updateFileNames(this)">
+                        <div class="text-5xl mb-3">⤴</div>
+                        <p class="text-lg font-semibold">Arrastrá imágenes aquí</p>
+                        <p class="text-zinc-400">o hacé click para seleccionar</p>
+                        <p class="text-sm text-zinc-500 mt-4">JPG, PNG, WEBP · múltiples archivos</p>
+                    </label>
 
-                <button
-                    type="submit"
-                    class="w-full md:w-fit px-6 py-3 rounded-xl bg-yellow-500 text-black font-black hover:bg-yellow-400 transition"
-                >
-                    SUBIR Y PROCESAR
-                </button>
-            </form>
-        </section>
+                    <div id="selectedFiles" class="text-sm text-zinc-400 min-h-[20px]"></div>
 
-        <section>
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xl font-bold">Productos cargados</h2>
-                <span class="text-sm text-zinc-400">{{ productos|length }} productos</span>
+                    <button type="submit" class="w-full rounded-xl bg-yellow-400 hover:bg-yellow-300 text-black py-3 font-black text-lg transition">
+                        SUBIR Y PROCESAR
+                    </button>
+                </form>
+            </section>
+
+            <section class="panel rounded-2xl p-4">
+                <h3 class="text-xl font-black mb-4">ESTADÍSTICAS</h3>
+                <div class="space-y-3 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-zinc-400">Total productos</span>
+                        <span class="font-bold">{{ productos|length }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-zinc-400">Con miniatura</span>
+                        <span class="font-bold">{{ productos|length }}</span>
+                    </div>
+                </div>
+            </section>
+        </aside>
+
+        <section class="space-y-4">
+            <div class="flex items-center justify-between gap-4">
+                <h2 class="text-3xl font-black">PRODUCTOS ({{ productos|length }})</h2>
             </div>
 
             {% if productos %}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
                 {% for p in productos %}
-                <div class="card rounded-2xl p-4 flex flex-col">
-
-                    <div class="bg-white rounded-xl h-64 flex items-center justify-center p-4 mb-4 overflow-hidden">
+                <article class="card rounded-2xl overflow-hidden">
+                    <div class="thumb-box h-[320px] flex items-center justify-center overflow-hidden">
+                        {% if p["thumb"] %}
                         <img
-                            src="{{ url_for('static', filename='processed/' + p[5]) }}"
-                            alt="{{ p[2] }} - {{ p[3] }}"
-                            class="max-w-full max-h-full object-contain"
+                            src="{{ url_for('static', filename='thumbs/' + p['thumb']) }}"
+                            alt="{{ p['codigo'] }}"
+                            class="w-full h-full object-cover"
                         >
-                    </div>
-
-                    <div class="mb-3">
-                        <p class="text-yellow-400 font-black text-lg leading-tight">{{ p[2] }}</p>
-                        <p class="text-zinc-400 text-sm leading-snug break-words">{{ p[3] }}</p>
-                    </div>
-
-                    <form action="/precio/{{ p[0] }}" method="post" class="mb-3">
-                        <label class="block text-xs uppercase tracking-wide text-zinc-400 mb-1">Precio</label>
-                        <input
-                            type="text"
-                            name="precio"
-                            value="{{ p[4] }}"
-                            placeholder="Ej: 25000"
-                            class="w-full rounded-lg bg-zinc-900 border border-white/10 px-3 py-2 text-white outline-none focus:border-yellow-500"
-                        >
-                        <button
-                            type="submit"
-                            class="mt-2 w-full rounded-lg bg-blue-600 hover:bg-blue-500 transition py-2 font-semibold"
-                        >
-                            Guardar precio
-                        </button>
-                    </form>
-
-                    <div class="grid grid-cols-2 gap-2 mt-auto">
-                        <a
-                            href="/download/{{ p[5] }}"
-                            class="text-center rounded-lg bg-zinc-800 hover:bg-zinc-700 transition py-2 text-sm font-semibold"
-                        >
-                            Descargar
-                        </a>
-
-                        {% if p[6] %}
-                        <a
-                            href="{{ p[6] }}"
-                            target="_blank"
-                            class="text-center rounded-lg bg-green-700 hover:bg-green-600 transition py-2 text-sm font-semibold"
-                        >
-                            Ver cloud
-                        </a>
                         {% else %}
-                        <span
-                            class="text-center rounded-lg bg-zinc-900 text-zinc-500 py-2 text-sm font-semibold"
+                        <img
+                            src="{{ url_for('static', filename='processed/' + p['imagen']) }}"
+                            alt="{{ p['codigo'] }}"
+                            class="w-full h-full object-contain"
                         >
-                            Sin cloud
-                        </span>
                         {% endif %}
-
-                        <a
-                            href="/delete/{{ p[0] }}"
-                            class="col-span-2 text-center rounded-lg bg-red-700 hover:bg-red-600 transition py-2 text-sm font-semibold"
-                            onclick="return confirm('¿Eliminar este producto?')"
-                        >
-                            Eliminar
-                        </a>
                     </div>
 
-                </div>
+                    <div class="p-4">
+                        <p class="text-2xl font-black leading-none mb-2">{{ p["codigo"] }}</p>
+                        <p class="text-zinc-300 text-base min-h-[48px] leading-snug">{{ p["descripcion"] }}</p>
+
+                        <form action="/precio/{{ p['id'] }}" method="post" class="mt-4 flex gap-2">
+                            <input
+                                type="text"
+                                name="precio"
+                                value="{{ p['precio'] }}"
+                                placeholder="$ 0"
+                                class="flex-1 bg-[#111722] border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-blue-500"
+                            >
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 font-bold transition">
+                                Guardar
+                            </button>
+                        </form>
+
+                        <div class="grid grid-cols-3 gap-2 mt-4">
+                            <a href="/download/{{ p['imagen'] }}" class="text-center bg-[#151c28] hover:bg-[#1c2431] rounded-xl py-3 text-sm font-semibold transition">
+                                Descargar
+                            </a>
+
+                            {% if p["url"] %}
+                            <a href="{{ p['url'] }}" target="_blank" class="text-center bg-[#151c28] hover:bg-[#1c2431] rounded-xl py-3 text-sm font-semibold transition">
+                                Ver nube
+                            </a>
+                            {% else %}
+                            <span class="text-center bg-[#151c28] text-zinc-500 rounded-xl py-3 text-sm font-semibold">
+                                Sin nube
+                            </span>
+                            {% endif %}
+
+                            <a href="/delete/{{ p['id'] }}" onclick="return confirm('¿Eliminar este producto?')" class="text-center bg-red-900/50 hover:bg-red-800 rounded-xl py-3 text-sm font-semibold text-red-300 transition">
+                                Eliminar
+                            </a>
+                        </div>
+                    </div>
+                </article>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="card rounded-2xl p-10 text-center">
-                <p class="text-zinc-400">Todavía no hay productos cargados.</p>
+            <div class="panel rounded-2xl p-10 text-center text-zinc-400">
+                Todavía no hay productos cargados.
             </div>
             {% endif %}
         </section>
-
     </main>
 
+    <script>
+        function updateFileNames(input) {
+            const box = document.getElementById('selectedFiles');
+            if (!input.files || !input.files.length) {
+                box.textContent = '';
+                return;
+            }
+            const names = Array.from(input.files).map(f => f.name);
+            box.innerHTML = names.map(n => `<div>• ${n}</div>`).join('');
+        }
+    </script>
 </body>
 </html>
