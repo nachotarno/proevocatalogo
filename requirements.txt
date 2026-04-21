@@ -3,4 +3,5 @@ pillow
 gunicorn
 requests
 reportlab
+openpyxl
 cloudinary
