@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, send_file, redirect, url_for
 import os
 import io
+import gc
 import sqlite3
 import requests
 
@@ -12,6 +13,7 @@ import cloudinary
 import cloudinary.uploader
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB por request
 
 # =========================
 # PATHS
@@ -92,7 +94,7 @@ def get_resample():
 def load_font(size: int):
     candidates = [
         os.path.join(BASE_DIR, "arial.ttf"),
-        os.path.join(BASE_DIR, "static", "arial.ttf"),
+        os.path.join(STATIC_DIR, "arial.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
@@ -131,6 +133,38 @@ def wrap_text(draw, text, font, max_width):
     lines.append(current)
     return lines
 
+def cleanup_memory():
+    gc.collect()
+
+# =========================
+# PREPROCESS (baja RAM)
+# =========================
+def downscale_before_removebg(local_path: str):
+    """
+    Reduce imágenes gigantes antes de enviarlas a remove.bg.
+    Esto baja muchísimo el consumo de RAM en Render.
+    """
+    try:
+        resample = get_resample()
+        with Image.open(local_path) as img:
+            img = ImageOps.exif_transpose(img)
+
+            max_side = 1800
+            if max(img.size) > max_side:
+                img.thumbnail((max_side, max_side), resample)
+
+            # guardamos sobre el mismo archivo con compresión razonable
+            if img.mode in ("RGBA", "LA"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                bg.paste(img, mask=img.split()[-1])
+                bg.save(local_path, format="JPEG", quality=88, optimize=True)
+            else:
+                img = img.convert("RGB")
+                img.save(local_path, format="JPEG", quality=88, optimize=True)
+
+    except Exception as e:
+        print("ERROR DOWNSCALE:", e)
+
 # =========================
 # REMOVE BACKGROUND
 # =========================
@@ -165,23 +199,28 @@ def remove_bg_file(local_path: str) -> bytes:
 # =========================
 def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     try:
+        resample = get_resample()
+        codigo, descripcion = split_name(os.path.basename(input_path))
+
+        # 1) bajar tamaño antes de remove.bg
+        downscale_before_removebg(input_path)
+
+        # 2) remove bg
         image_bytes = remove_bg_file(input_path)
 
-        prod = Image.open(io.BytesIO(image_bytes))
-        prod = ImageOps.exif_transpose(prod).convert("RGBA")
+        # 3) abrir resultado
+        with Image.open(io.BytesIO(image_bytes)) as raw:
+            prod = ImageOps.exif_transpose(raw).convert("RGBA")
 
         bbox = prod.getbbox()
         if bbox:
             prod = prod.crop(bbox)
 
-        codigo, descripcion = split_name(os.path.basename(input_path))
-
-        # ----- MASTER IMAGE (estilo exacto) -----
+        # ================= MASTER =================
         W, H = 1000, 1000
         canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        resample = get_resample()
 
-        # zona útil consistente
+        # tamaño visual consistente
         max_w = 620
         max_h = 560
         prod.thumbnail((max_w, max_h), resample)
@@ -201,10 +240,8 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
             ),
             fill=(0, 0, 0, 105),
         )
-        shadow = shadow.filter(ImageFilter.GaussianBlur(22))
-        canvas.paste(shadow, (x, y + 34), shadow)
-
-        # producto
+        shadow = shadow.filter(ImageFilter.GaussianBlur(20))
+        canvas.paste(shadow, (x, y + 30), shadow)
         canvas.paste(prod, (x, y), prod)
 
         draw = ImageDraw.Draw(canvas)
@@ -213,11 +250,12 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
         logo_path = os.path.join(STATIC_DIR, "logo.png")
         if os.path.exists(logo_path):
             try:
-                logo = Image.open(logo_path).convert("RGBA")
-                logo.thumbnail((180, 60), resample)
-                lx = W - logo.width - 26
-                ly = 26
-                canvas.paste(logo, (lx, ly), logo)
+                with Image.open(logo_path) as logo_raw:
+                    logo = logo_raw.convert("RGBA")
+                    logo.thumbnail((180, 60), resample)
+                    lx = W - logo.width - 26
+                    ly = 26
+                    canvas.paste(logo, (lx, ly), logo)
             except Exception as e:
                 print("ERROR LOGO:", e)
 
@@ -225,21 +263,16 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
         font_code = load_font(34)
         font_desc = load_font(20)
 
-        code_text = codigo
-        desc_text = descripcion
+        draw.text((50, 840), codigo, fill=(0, 0, 0), font=font_code)
 
-        draw.text((50, 840), code_text, fill=(0, 0, 0), font=font_code)
-
-        desc_lines = wrap_text(draw, desc_text, font_desc, 900)
-        desc_lines = desc_lines[:2]
-
+        desc_lines = wrap_text(draw, descripcion, font_desc, 900)[:2]
         start_y = 890
         for i, line in enumerate(desc_lines):
             draw.text((50, start_y + (i * 28)), line, fill=(110, 110, 110), font=font_desc)
 
-        canvas.save(output_path, "PNG")
+        canvas.save(output_path, "PNG", optimize=True)
 
-        # ----- THUMB WEB -----
+        # ================= THUMB =================
         thumb_canvas = Image.new("RGBA", (700, 520), (255, 255, 255, 0))
 
         thumb_prod = prod.copy()
@@ -259,36 +292,44 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
             ),
             fill=(0, 0, 0, 85),
         )
-        thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(14))
-        thumb_canvas.paste(thumb_shadow, (tx, ty + 20), thumb_shadow)
+        thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(12))
+        thumb_canvas.paste(thumb_shadow, (tx, ty + 18), thumb_shadow)
         thumb_canvas.paste(thumb_prod, (tx, ty), thumb_prod)
 
         thumb_draw = ImageDraw.Draw(thumb_canvas)
 
         if os.path.exists(logo_path):
             try:
-                logo_small = Image.open(logo_path).convert("RGBA")
-                logo_small.thumbnail((110, 34), resample)
-                thumb_canvas.paste(logo_small, (700 - logo_small.width - 14, 14), logo_small)
+                with Image.open(logo_path) as logo_small_raw:
+                    logo_small = logo_small_raw.convert("RGBA")
+                    logo_small.thumbnail((110, 34), resample)
+                    thumb_canvas.paste(logo_small, (700 - logo_small.width - 14, 14), logo_small)
             except Exception:
                 pass
 
         thumb_font_code = load_font(22)
         thumb_font_desc = load_font(16)
 
-        thumb_draw.text((24, 390), code_text, fill=(20, 20, 20), font=thumb_font_code)
+        thumb_draw.text((24, 390), codigo, fill=(20, 20, 20), font=thumb_font_code)
 
-        thumb_desc_lines = wrap_text(thumb_draw, desc_text, thumb_font_desc, 650)
-        thumb_desc_lines = thumb_desc_lines[:2]
-
+        thumb_desc_lines = wrap_text(thumb_draw, descripcion, thumb_font_desc, 650)[:2]
         thumb_start_y = 424
         for i, line in enumerate(thumb_desc_lines):
             thumb_draw.text((24, thumb_start_y + (i * 22)), line, fill=(110, 110, 110), font=thumb_font_desc)
 
-        thumb_canvas.save(thumb_path, "PNG")
+        thumb_canvas.save(thumb_path, "PNG", optimize=True)
+
+        # liberar memoria
+        prod.close()
+        canvas.close()
+        thumb_canvas.close()
+        shadow.close()
+        thumb_shadow.close()
+        cleanup_memory()
 
     except Exception as e:
         print("ERROR PROCESANDO:", e)
+        cleanup_memory()
 
 # =========================
 # ROUTES
@@ -306,6 +347,9 @@ def upload():
     if not files:
         return redirect(url_for("index"))
 
+    # En Render free conviene no mandar 10 enormes de golpe
+    files = files[:5]
+
     conn = get_conn()
 
     for f in files:
@@ -314,9 +358,11 @@ def upload():
                 continue
 
             filename = secure_name(f.filename)
-            upload_path = os.path.join(UPLOAD_DIR, filename)
-            processed_path = os.path.join(PROCESSED_DIR, filename)
-            thumb_name = f"thumb_{filename.rsplit('.', 1)[0]}.png"
+            base_name = os.path.splitext(filename)[0]
+
+            upload_path = os.path.join(UPLOAD_DIR, f"{base_name}.jpg")
+            processed_path = os.path.join(PROCESSED_DIR, f"{base_name}.png")
+            thumb_name = f"thumb_{base_name}.png"
             thumb_path = os.path.join(THUMBS_DIR, thumb_name)
 
             f.save(upload_path)
@@ -337,19 +383,29 @@ def upload():
                 INSERT INTO productos (nombre, codigo, descripcion, precio, imagen, thumb, url)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
-                filename,
+                f"{base_name}.png",
                 codigo,
                 descripcion,
                 "",
-                filename,
+                f"{base_name}.png",
                 thumb_name,
                 cloud_url
             ))
+            conn.commit()
+
+            # borrar upload temporal para ahorrar disco/memoria
+            if os.path.exists(upload_path):
+                try:
+                    os.remove(upload_path)
+                except Exception:
+                    pass
+
+            cleanup_memory()
 
         except Exception as e:
             print("ERROR SUBIENDO ARCHIVO:", e)
+            cleanup_memory()
 
-    conn.commit()
     conn.close()
     return redirect(url_for("index"))
 
@@ -379,7 +435,6 @@ def delete(item_id):
         thumb_name = row["thumb"]
 
         for p in [
-            os.path.join(UPLOAD_DIR, image_name),
             os.path.join(PROCESSED_DIR, image_name),
             os.path.join(THUMBS_DIR, thumb_name),
         ]:
@@ -392,6 +447,7 @@ def delete(item_id):
     conn.execute("DELETE FROM productos WHERE id=?", (item_id,))
     conn.commit()
     conn.close()
+    cleanup_memory()
     return redirect(url_for("index"))
 
 @app.route("/export-excel")
@@ -421,4 +477,6 @@ def export_excel():
     return send_file(excel_path, as_attachment=True)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+    
