@@ -9,13 +9,9 @@ import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageFont
 from werkzeug.utils import secure_filename
 from openpyxl import Workbook
-from openpyxl.drawing.image import Image as XLImage
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen import canvas as pdf_canvas
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
 
 # =========================
 # PATHS
@@ -120,17 +116,12 @@ def downscale_before_removebg(local_path: str):
         with Image.open(local_path) as img:
             img = ImageOps.exif_transpose(img)
 
-            max_side = 1400
+            max_side = 1300
             if max(img.size) > max_side:
                 img.thumbnail((max_side, max_side), resample)
 
-            if img.mode in ("RGBA", "LA"):
-                bg = Image.new("RGB", img.size, (255, 255, 255))
-                bg.paste(img, mask=img.split()[-1])
-                bg.save(local_path, format="JPEG", quality=86, optimize=True)
-            else:
-                img = img.convert("RGB")
-                img.save(local_path, format="JPEG", quality=86, optimize=True)
+            img = img.convert("RGB")
+            img.save(local_path, format="JPEG", quality=85, optimize=True)
     except Exception as e:
         print("ERROR DOWNSCALE:", e)
 
@@ -140,8 +131,7 @@ def downscale_before_removebg(local_path: str):
 def remove_bg_file(local_path: str) -> bytes:
     try:
         if not REMOVE_BG_API_KEY:
-            with open(local_path, "rb") as f:
-                return f.read()
+            raise Exception("Falta REMOVE_BG_API_KEY")
 
         with open(local_path, "rb") as f:
             response = requests.post(
@@ -155,162 +145,146 @@ def remove_bg_file(local_path: str) -> bytes:
         if response.status_code == 200:
             return response.content
 
-        print("REMOVE.BG ERROR:", response.status_code, response.text)
-        with open(local_path, "rb") as f:
-            return f.read()
+        raise Exception(f"remove.bg respondió {response.status_code}: {response.text}")
 
     except Exception as e:
         print("ERROR REMOVE.BG:", e)
-        with open(local_path, "rb") as f:
-            return f.read()
+        raise
 
 # =========================
-# IMAGE STYLE
+# IMAGE PROCESSING
 # =========================
 def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
-    try:
-        resample = get_resample()
-        codigo, descripcion = split_name(os.path.basename(input_path))
-        texto_completo = f"{codigo} {descripcion}".strip()
+    resample = get_resample()
+    codigo, descripcion = split_name(os.path.basename(input_path))
+    texto_completo = f"{codigo} {descripcion}".strip()
 
-        downscale_before_removebg(input_path)
-        image_bytes = remove_bg_file(input_path)
+    downscale_before_removebg(input_path)
+    image_bytes = remove_bg_file(input_path)
 
-        with Image.open(io.BytesIO(image_bytes)) as raw:
-            prod = ImageOps.exif_transpose(raw).convert("RGBA")
+    with Image.open(io.BytesIO(image_bytes)) as raw:
+        prod = ImageOps.exif_transpose(raw).convert("RGBA")
 
-        bbox = prod.getbbox()
-        if bbox:
-            prod = prod.crop(bbox)
+    bbox = prod.getbbox()
+    if bbox:
+        prod = prod.crop(bbox)
 
-        # -------- Imagen final --------
-        base_width = 1000
-        area_height = 760
-        footer_height = 170
-        W = base_width
-        H = area_height + footer_height
+    # ----- Imagen final -----
+    base_width = 1000
+    area_height = 760
+    footer_height = 170
+    W = base_width
+    H = area_height + footer_height
 
-        max_w = 620
-        max_h = 520
-        prod.thumbnail((max_w, max_h), resample)
+    max_w = 620
+    max_h = 520
+    prod.thumbnail((max_w, max_h), resample)
 
-        canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
-        x = (W - prod.width) // 2
-        y = max(70, (area_height - prod.height) // 2 + 20)
+    x = (W - prod.width) // 2
+    y = max(70, (area_height - prod.height) // 2 + 20)
 
-        shadow = Image.new("RGBA", (prod.width, prod.height), (0, 0, 0, 0))
-        shadow_draw = ImageDraw.Draw(shadow)
-        shadow_draw.ellipse(
-            (
-                int(prod.width * 0.20),
-                int(prod.height * 0.82),
-                int(prod.width * 0.80),
-                int(prod.height * 0.96),
-            ),
-            fill=(0, 0, 0, 105),
-        )
-        shadow = shadow.filter(ImageFilter.GaussianBlur(20))
+    shadow = Image.new("RGBA", (prod.width, prod.height), (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.ellipse(
+        (
+            int(prod.width * 0.20),
+            int(prod.height * 0.82),
+            int(prod.width * 0.80),
+            int(prod.height * 0.96),
+        ),
+        fill=(0, 0, 0, 105),
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(20))
 
-        canvas.paste(shadow, (x, y + 28), shadow)
-        canvas.paste(prod, (x, y), prod)
+    canvas.paste(shadow, (x, y + 28), shadow)
+    canvas.paste(prod, (x, y), prod)
 
-        draw = ImageDraw.Draw(canvas)
+    draw = ImageDraw.Draw(canvas)
 
-        logo_path = os.path.join(STATIC_DIR, "logo.png")
-        if os.path.exists(logo_path):
-            try:
-                with Image.open(logo_path) as logo_raw:
-                    logo = make_white_transparent(logo_raw)
-                    logo_width = int(W * 0.16)
-                    ratio = logo_width / logo.width
-                    logo_height = int(logo.height * ratio)
-                    logo = logo.resize((logo_width, logo_height), resample)
+    logo_path = os.path.join(STATIC_DIR, "logo.png")
+    if os.path.exists(logo_path):
+        with Image.open(logo_path) as logo_raw:
+            logo = make_white_transparent(logo_raw)
+            logo_width = int(W * 0.16)
+            ratio = logo_width / logo.width
+            logo_height = int(logo.height * ratio)
+            logo = logo.resize((logo_width, logo_height), resample)
 
-                    lx = W - logo.width - 24
-                    ly = 20
-                    canvas.paste(logo, (lx, ly), logo)
-            except Exception as e:
-                print("ERROR LOGO:", e)
+            lx = W - logo.width - 24
+            ly = 20
+            canvas.paste(logo, (lx, ly), logo)
 
-        font_main = load_font(int(W * 0.04))
-        text = texto_completo.upper()
+    font_main = load_font(int(W * 0.04))
+    text = texto_completo.upper()
 
-        text_box = draw.textbbox((0, 0), text, font=font_main)
-        text_width = text_box[2] - text_box[0]
-        text_height = text_box[3] - text_box[1]
+    text_box = draw.textbbox((0, 0), text, font=font_main)
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
 
-        text_x = (W - text_width) // 2
-        text_y = area_height + ((footer_height - text_height) // 2) - 4
+    text_x = (W - text_width) // 2
+    text_y = area_height + ((footer_height - text_height) // 2) - 4
 
-        draw.text((text_x + 2, text_y + 2), text, fill=(0, 0, 0, 180), font=font_main)
-        draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font_main)
+    draw.text((text_x + 2, text_y + 2), text, fill=(0, 0, 0, 180), font=font_main)
+    draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font_main)
 
-        canvas.save(output_path, "PNG", optimize=True)
+    canvas.save(output_path, "PNG", optimize=True)
 
-        # -------- Miniatura --------
-        thumb_w, thumb_h = 700, 520
-        thumb_canvas = Image.new("RGBA", (thumb_w, thumb_h), (255, 255, 255, 0))
+    # ----- Miniatura -----
+    thumb_w, thumb_h = 700, 520
+    thumb_canvas = Image.new("RGBA", (thumb_w, thumb_h), (255, 255, 255, 0))
 
-        thumb_prod = prod.copy()
-        thumb_prod.thumbnail((360, 260), resample)
+    thumb_prod = prod.copy()
+    thumb_prod.thumbnail((360, 260), resample)
 
-        tx = (thumb_w - thumb_prod.width) // 2
-        ty = 54 + (230 - thumb_prod.height) // 2
+    tx = (thumb_w - thumb_prod.width) // 2
+    ty = 54 + (230 - thumb_prod.height) // 2
 
-        thumb_shadow = Image.new("RGBA", (thumb_prod.width, thumb_prod.height), (0, 0, 0, 0))
-        thumb_shadow_draw = ImageDraw.Draw(thumb_shadow)
-        thumb_shadow_draw.ellipse(
-            (
-                int(thumb_prod.width * 0.20),
-                int(thumb_prod.height * 0.82),
-                int(thumb_prod.width * 0.80),
-                int(thumb_prod.height * 0.96),
-            ),
-            fill=(0, 0, 0, 85),
-        )
-        thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(12))
+    thumb_shadow = Image.new("RGBA", (thumb_prod.width, thumb_prod.height), (0, 0, 0, 0))
+    thumb_shadow_draw = ImageDraw.Draw(thumb_shadow)
+    thumb_shadow_draw.ellipse(
+        (
+            int(thumb_prod.width * 0.20),
+            int(thumb_prod.height * 0.82),
+            int(thumb_prod.width * 0.80),
+            int(thumb_prod.height * 0.96),
+        ),
+        fill=(0, 0, 0, 85),
+    )
+    thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(12))
 
-        thumb_canvas.paste(thumb_shadow, (tx, ty + 18), thumb_shadow)
-        thumb_canvas.paste(thumb_prod, (tx, ty), thumb_prod)
+    thumb_canvas.paste(thumb_shadow, (tx, ty + 18), thumb_shadow)
+    thumb_canvas.paste(thumb_prod, (tx, ty), thumb_prod)
 
-        thumb_draw = ImageDraw.Draw(thumb_canvas)
+    thumb_draw = ImageDraw.Draw(thumb_canvas)
 
-        if os.path.exists(logo_path):
-            try:
-                with Image.open(logo_path) as logo_small_raw:
-                    logo_small = make_white_transparent(logo_small_raw)
-                    logo_small.thumbnail((110, 34), resample)
-                    thumb_canvas.paste(logo_small, (thumb_w - logo_small.width - 14, 14), logo_small)
-            except Exception:
-                pass
+    if os.path.exists(logo_path):
+        with Image.open(logo_path) as logo_small_raw:
+            logo_small = make_white_transparent(logo_small_raw)
+            logo_small.thumbnail((110, 34), resample)
+            thumb_canvas.paste(logo_small, (thumb_w - logo_small.width - 14, 14), logo_small)
 
-        thumb_font = load_font(22)
-        thumb_text = texto_completo.upper()
+    thumb_font = load_font(22)
+    thumb_text = texto_completo.upper()
 
-        thumb_text_box = thumb_draw.textbbox((0, 0), thumb_text, font=thumb_font)
-        thumb_text_w = thumb_text_box[2] - thumb_text_box[0]
-        thumb_text_h = thumb_text_box[3] - thumb_text_box[1]
+    thumb_text_box = thumb_draw.textbbox((0, 0), thumb_text, font=thumb_font)
+    thumb_text_w = thumb_text_box[2] - thumb_text_box[0]
 
-        thumb_text_x = (thumb_w - thumb_text_w) // 2
-        thumb_text_y = 404
+    thumb_text_x = (thumb_w - thumb_text_w) // 2
+    thumb_text_y = 404
 
-        thumb_draw.text((thumb_text_x + 1, thumb_text_y + 1), thumb_text, fill=(0, 0, 0, 140), font=thumb_font)
-        thumb_draw.text((thumb_text_x, thumb_text_y), thumb_text, fill=(30, 30, 30), font=thumb_font)
+    thumb_draw.text((thumb_text_x + 1, thumb_text_y + 1), thumb_text, fill=(0, 0, 0, 140), font=thumb_font)
+    thumb_draw.text((thumb_text_x, thumb_text_y), thumb_text, fill=(30, 30, 30), font=thumb_font)
 
-        thumb_canvas.save(thumb_path, "PNG", optimize=True)
+    thumb_canvas.save(thumb_path, "PNG", optimize=True)
 
-        prod.close()
-        canvas.close()
-        thumb_canvas.close()
-        shadow.close()
-        thumb_shadow.close()
-        cleanup_memory()
-
-    except Exception as e:
-        print("ERROR PROCESANDO:", e)
-        cleanup_memory()
-        raise
+    prod.close()
+    canvas.close()
+    thumb_canvas.close()
+    shadow.close()
+    thumb_shadow.close()
+    cleanup_memory()
 
 # =========================
 # ROUTES
@@ -320,7 +294,7 @@ def index():
     conn = get_conn()
     productos = conn.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
     conn.close()
-    return render_template("index.html", productos=productos, mensaje="")
+    return render_template("index.html", productos=productos, error="")
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -328,12 +302,11 @@ def upload():
     if not files:
         return redirect(url_for("index"))
 
-    files = files[:3]  # más estable para Render free
-
+    files = files[:2]  # súper estable para Render free
     conn = get_conn()
 
-    for f in files:
-        try:
+    try:
+        for f in files:
             if not f or not f.filename:
                 continue
 
@@ -367,19 +340,19 @@ def upload():
             conn.commit()
 
             if os.path.exists(upload_path):
-                try:
-                    os.remove(upload_path)
-                except Exception:
-                    pass
+                os.remove(upload_path)
 
-            cleanup_memory()
+        conn.close()
+        return redirect(url_for("index"))
 
-        except Exception as e:
-            print("ERROR SUBIENDO ARCHIVO:", e)
-            cleanup_memory()
+    except Exception as e:
+        print("ERROR EN UPLOAD:", e)
+        conn.close()
 
-    conn.close()
-    return redirect(url_for("index"))
+        conn2 = get_conn()
+        productos = conn2.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
+        conn2.close()
+        return render_template("index.html", productos=productos, error=f"Error procesando imagen: {e}")
 
 @app.route("/precio/<int:item_id>", methods=["POST"])
 def actualizar_precio(item_id):
@@ -403,130 +376,42 @@ def delete(item_id):
     row = conn.execute("SELECT imagen, thumb FROM productos WHERE id=?", (item_id,)).fetchone()
 
     if row:
-        image_name = row["imagen"]
-        thumb_name = row["thumb"]
-
         for p in [
-            os.path.join(PROCESSED_DIR, image_name),
-            os.path.join(THUMBS_DIR, thumb_name),
+            os.path.join(PROCESSED_DIR, row["imagen"]),
+            os.path.join(THUMBS_DIR, row["thumb"]),
         ]:
             if os.path.exists(p):
                 try:
                     os.remove(p)
-                except Exception as e:
-                    print("ERROR BORRANDO:", e)
+                except Exception:
+                    pass
 
     conn.execute("DELETE FROM productos WHERE id=?", (item_id,))
     conn.commit()
     conn.close()
-    cleanup_memory()
     return redirect(url_for("index"))
 
 @app.route("/export-excel")
 def export_excel():
-    try:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Catalogo"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Catalogo"
+    ws.append(["CODIGO", "DESCRIPCION", "PRECIO", "IMAGEN", "MINIATURA"])
 
-        ws.append(["CODIGO", "DESCRIPCION", "PRECIO", "IMAGEN"])
+    conn = get_conn()
+    productos = conn.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
+    conn.close()
 
-        conn = get_conn()
-        productos = conn.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
-        conn.close()
+    for p in productos:
+        ws.append([p["codigo"], p["descripcion"], p["precio"], p["imagen"], p["thumb"]])
 
-        row = 2
-        for p in productos:
-            ws[f"A{row}"] = p["codigo"]
-            ws[f"B{row}"] = p["descripcion"]
-            ws[f"C{row}"] = p["precio"]
-
-            img_path = os.path.join(THUMBS_DIR, p["thumb"]) if p["thumb"] else ""
-            if img_path and os.path.exists(img_path):
-                try:
-                    xl_img = XLImage(img_path)
-                    xl_img.width = 140
-                    xl_img.height = 104
-                    ws.add_image(xl_img, f"D{row}")
-                    ws.row_dimensions[row].height = 82
-                except Exception as e:
-                    print("ERROR EXCEL IMG:", e)
-
-            row += 6
-
-        ws.column_dimensions["A"].width = 18
-        ws.column_dimensions["B"].width = 42
-        ws.column_dimensions["C"].width = 15
-        ws.column_dimensions["D"].width = 24
-
-        excel_path = os.path.join(BASE_DIR, "catalogo.xlsx")
-        wb.save(excel_path)
-        return send_file(excel_path, as_attachment=True)
-    except Exception as e:
-        print("ERROR EXPORT EXCEL:", e)
-        return redirect(url_for("index"))
+    excel_path = os.path.join(BASE_DIR, "catalogo.xlsx")
+    wb.save(excel_path)
+    return send_file(excel_path, as_attachment=True)
 
 @app.route("/export-pdf")
 def export_pdf():
-    try:
-        pdf_path = os.path.join(BASE_DIR, "catalogo.pdf")
-        c = pdf_canvas.Canvas(pdf_path, pagesize=A4)
-        page_w, page_h = A4
-
-        conn = get_conn()
-        productos = conn.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
-        conn.close()
-
-        x = 40
-        y = page_h - 60
-        card_w = 250
-        card_h = 260
-        gap_x = 24
-        gap_y = 24
-        col = 0
-
-        for p in productos:
-            img_path = os.path.join(THUMBS_DIR, p["thumb"]) if p["thumb"] else ""
-            if not os.path.exists(img_path):
-                continue
-
-            # tarjeta
-            c.roundRect(x, y - card_h, card_w, card_h, 12, stroke=1, fill=0)
-
-            try:
-                with Image.open(img_path) as pil_img:
-                    rgb_img = pil_img.convert("RGBA")
-                    img_reader = ImageReader(rgb_img)
-                    c.drawImage(img_reader, x + 12, y - 170, width=226, height=150, mask='auto')
-            except Exception as e:
-                print("ERROR PDF IMG:", e)
-
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(x + 12, y - 188, p["codigo"] or "")
-
-            c.setFont("Helvetica", 10)
-            desc = (p["descripcion"] or "")[:42]
-            c.drawString(x + 12, y - 205, desc)
-
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(x + 12, y - 226, f"Precio: {p['precio'] or '-'}")
-
-            col += 1
-            if col == 2:
-                col = 0
-                x = 40
-                y -= (card_h + gap_y)
-                if y - card_h < 40:
-                    c.showPage()
-                    y = page_h - 60
-            else:
-                x += card_w + gap_x
-
-        c.save()
-        return send_file(pdf_path, as_attachment=True)
-    except Exception as e:
-        print("ERROR EXPORT PDF:", e)
-        return redirect(url_for("index"))
+    return redirect(url_for("index"))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
