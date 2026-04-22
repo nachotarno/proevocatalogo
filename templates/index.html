@@ -45,31 +45,17 @@
             border-color: #3b82f6;
             box-shadow: 0 0 0 1px rgba(59,130,246,0.4);
         }
-
-        .scroll-soft::-webkit-scrollbar {
-            width: 10px;
-        }
-
-        .scroll-soft::-webkit-scrollbar-thumb {
-            background: #1f2937;
-            border-radius: 999px;
-        }
-
-        .scroll-soft::-webkit-scrollbar-track {
-            background: transparent;
-        }
     </style>
 </head>
 <body class="min-h-screen">
 
-    <!-- HEADER -->
     <header class="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-50">
         <div class="max-w-[1650px] mx-auto px-5 py-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div class="flex items-center gap-5">
                 <img src="{{ url_for('static', filename='logo.png') }}" alt="PROEVO" class="h-10 object-contain">
                 <div>
                     <h1 class="text-2xl font-black tracking-tight">CATÁLOGO DE REPUESTOS</h1>
-                    <p class="text-zinc-400 text-sm">Procesamiento automático de imágenes y catálogo web</p>
+                    <p class="text-zinc-400 text-sm">Procesamiento automático y exportación con imágenes</p>
                 </div>
             </div>
 
@@ -77,14 +63,15 @@
                 <a href="/export-excel" class="px-5 py-3 rounded-xl bg-green-600 hover:bg-green-500 transition font-bold">
                     Exportar Excel
                 </a>
+                <a href="/export-pdf" class="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 transition font-bold">
+                    Exportar PDF
+                </a>
             </div>
         </div>
     </header>
 
-    <!-- MAIN -->
     <main class="max-w-[1650px] mx-auto p-5 grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
 
-        <!-- SIDEBAR -->
         <aside class="space-y-5">
             <section class="panel rounded-2xl p-4">
                 <h2 class="text-2xl font-black mb-4">SUBIR IMÁGENES</h2>
@@ -95,15 +82,19 @@
                         <div class="text-5xl mb-3">⤴</div>
                         <p class="text-lg font-semibold">Arrastrá imágenes aquí</p>
                         <p class="text-zinc-400">o hacé click para seleccionar</p>
-                        <p class="text-sm text-zinc-500 mt-4">JPG, PNG, WEBP · hasta 5 archivos</p>
+                        <p class="text-sm text-zinc-500 mt-4">JPG, PNG, WEBP · hasta 3 archivos</p>
                     </label>
 
-                    <div id="selectedFiles" class="text-sm text-zinc-400 min-h-[20px] max-h-[140px] overflow-auto scroll-soft"></div>
+                    <div id="selectedFiles" class="text-sm text-zinc-400 min-h-[20px] max-h-[140px] overflow-auto"></div>
 
                     <button type="submit" class="w-full rounded-xl bg-yellow-400 hover:bg-yellow-300 text-black py-3 font-black text-lg transition">
                         SUBIR Y PROCESAR
                     </button>
                 </form>
+
+                <p class="text-xs text-zinc-500 mt-3">
+                    En Render conviene subir pocas imágenes por vez para evitar errores de memoria.
+                </p>
             </section>
 
             <section class="panel rounded-2xl p-4">
@@ -114,53 +105,19 @@
                         <span class="text-zinc-400">Total productos</span>
                         <span class="font-bold">{{ productos|length }}</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-zinc-400">Con miniatura</span>
-                        <span class="font-bold">{{ productos|length }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-zinc-400">Sin precio</span>
-                        <span class="font-bold">
-                            {{ productos | selectattr("precio", "equalto", "") | list | length }}
-                        </span>
-                    </div>
-                </div>
-            </section>
-
-            <section class="panel rounded-2xl p-4">
-                <h3 class="text-xl font-black mb-4">VISTA</h3>
-                <div class="space-y-2">
-                    <div class="rounded-xl bg-yellow-400 text-black px-4 py-3 font-semibold">Vista cuadrícula</div>
-                    <div class="rounded-xl bg-[#10161f] text-zinc-300 px-4 py-3 font-semibold">Vista lista</div>
                 </div>
             </section>
         </aside>
 
-        <!-- CONTENT -->
         <section class="space-y-4">
-            <div class="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+            <div class="flex items-center justify-between gap-4">
                 <h2 class="text-3xl font-black">PRODUCTOS ({{ productos|length }})</h2>
-
-                <div class="flex flex-col md:flex-row gap-3 w-full 2xl:w-auto">
-                    <input
-                        type="text"
-                        id="searchInput"
-                        placeholder="Buscar por código o descripción..."
-                        class="input-dark rounded-xl px-4 py-3 w-full md:w-[320px]"
-                        onkeyup="filtrarProductos()"
-                    >
-                </div>
             </div>
 
             {% if productos %}
-            <div id="productosGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
                 {% for p in productos %}
-                <article
-                    class="card rounded-2xl overflow-hidden producto-card"
-                    data-codigo="{{ p['codigo'] | lower }}"
-                    data-descripcion="{{ p['descripcion'] | lower }}"
-                >
-                    <!-- MINIATURA -->
+                <article class="card rounded-2xl overflow-hidden">
                     <div class="thumb-box h-[320px] flex items-center justify-center overflow-hidden">
                         {% if p["thumb"] %}
                         <img
@@ -177,12 +134,10 @@
                         {% endif %}
                     </div>
 
-                    <!-- INFO -->
                     <div class="p-4">
                         <p class="text-2xl font-black leading-none mb-2">{{ p["codigo"] }}</p>
                         <p class="text-zinc-300 text-base min-h-[48px] leading-snug">{{ p["descripcion"] }}</p>
 
-                        <!-- PRECIO -->
                         <form action="/precio/{{ p['id'] }}" method="post" class="mt-4 flex gap-2">
                             <input
                                 type="text"
@@ -196,21 +151,10 @@
                             </button>
                         </form>
 
-                        <!-- ACTIONS -->
-                        <div class="grid grid-cols-3 gap-2 mt-4">
+                        <div class="grid grid-cols-2 gap-2 mt-4">
                             <a href="/download/{{ p['imagen'] }}" class="text-center bg-[#151c28] hover:bg-[#1c2431] rounded-xl py-3 text-sm font-semibold transition">
                                 Descargar
                             </a>
-
-                            {% if p["url"] %}
-                            <a href="{{ p['url'] }}" target="_blank" class="text-center bg-[#151c28] hover:bg-[#1c2431] rounded-xl py-3 text-sm font-semibold transition">
-                                Ver nube
-                            </a>
-                            {% else %}
-                            <span class="text-center bg-[#151c28] text-zinc-500 rounded-xl py-3 text-sm font-semibold">
-                                Sin nube
-                            </span>
-                            {% endif %}
 
                             <a href="/delete/{{ p['id'] }}" onclick="return confirm('¿Eliminar este producto?')" class="text-center bg-red-900/50 hover:bg-red-800 rounded-xl py-3 text-sm font-semibold text-red-300 transition">
                                 Eliminar
@@ -231,30 +175,12 @@
     <script>
         function updateFileNames(input) {
             const box = document.getElementById('selectedFiles');
-
             if (!input.files || !input.files.length) {
                 box.textContent = '';
                 return;
             }
-
             const names = Array.from(input.files).map(f => f.name);
             box.innerHTML = names.map(n => `<div>• ${n}</div>`).join('');
-        }
-
-        function filtrarProductos() {
-            const value = document.getElementById("searchInput").value.toLowerCase();
-            const cards = document.querySelectorAll(".producto-card");
-
-            cards.forEach(card => {
-                const codigo = card.dataset.codigo || "";
-                const descripcion = card.dataset.descripcion || "";
-
-                if (codigo.includes(value) || descripcion.includes(value)) {
-                    card.style.display = "";
-                } else {
-                    card.style.display = "none";
-                }
-            });
         }
     </script>
 </body>
