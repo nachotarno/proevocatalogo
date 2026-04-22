@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, send_file, redirect, url_for
 import os
 import io
 import gc
+import time
 import sqlite3
 import requests
 
@@ -13,7 +14,7 @@ import cloudinary
 import cloudinary.uploader
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB por request
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
 
 # =========================
 # PATHS
@@ -32,7 +33,7 @@ os.makedirs(THUMBS_DIR, exist_ok=True)
 # =========================
 # ENV
 # =========================
-REMOVE_BG_API_KEY = os.environ.get("REMOVE_BG_API_KEY", "")
+REMOVE_BG_API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
 
 cloudinary.config(
     cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
@@ -136,14 +137,23 @@ def wrap_text(draw, text, font, max_width):
 def cleanup_memory():
     gc.collect()
 
+def make_white_transparent(image):
+    image = image.convert("RGBA")
+    pixels = []
+
+    for red, green, blue, alpha in image.getdata():
+        if red > 235 and green > 235 and blue > 235:
+            pixels.append((255, 255, 255, 0))
+        else:
+            pixels.append((red, green, blue, alpha))
+
+    image.putdata(pixels)
+    return image
+
 # =========================
-# PREPROCESS (baja RAM)
+# PREPROCESS
 # =========================
 def downscale_before_removebg(local_path: str):
-    """
-    Reduce imágenes gigantes antes de enviarlas a remove.bg.
-    Esto baja muchísimo el consumo de RAM en Render.
-    """
     try:
         resample = get_resample()
         with Image.open(local_path) as img:
@@ -153,7 +163,6 @@ def downscale_before_removebg(local_path: str):
             if max(img.size) > max_side:
                 img.thumbnail((max_side, max_side), resample)
 
-            # guardamos sobre el mismo archivo con compresión razonable
             if img.mode in ("RGBA", "LA"):
                 bg = Image.new("RGB", img.size, (255, 255, 255))
                 bg.paste(img, mask=img.split()[-1])
@@ -178,6 +187,7 @@ def remove_bg_file(local_path: str) -> bytes:
             response = requests.post(
                 "https://api.remove.bg/v1.0/removebg",
                 files={"image_file": f},
+                data={"size": "auto"},
                 headers={"X-Api-Key": REMOVE_BG_API_KEY},
                 timeout=120
             )
@@ -201,34 +211,45 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     try:
         resample = get_resample()
         codigo, descripcion = split_name(os.path.basename(input_path))
+        texto_completo = f"{codigo} {descripcion}".strip()
 
-        # 1) bajar tamaño antes de remove.bg
+        # 1. bajar tamaño antes de remove.bg
         downscale_before_removebg(input_path)
 
-        # 2) remove bg
+        # 2. remove.bg
         image_bytes = remove_bg_file(input_path)
 
-        # 3) abrir resultado
+        # 3. abrir y corregir orientación
         with Image.open(io.BytesIO(image_bytes)) as raw:
             prod = ImageOps.exif_transpose(raw).convert("RGBA")
 
+        # 4. recorte exacto del objeto
         bbox = prod.getbbox()
         if bbox:
             prod = prod.crop(bbox)
 
-        # ================= MASTER =================
-        W, H = 1000, 1000
-        canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        # =========================
+        # MASTER IMAGE
+        # =========================
+        # Mantiene el estilo del main que te gustaba:
+        # pieza centrada, fondo transparente, footer transparente con texto abajo.
+        base_width = 1000
+        area_height = 760
+        footer_height = 170
+        W = base_width
+        H = area_height + footer_height
 
-        # tamaño visual consistente
+        # Escala uniforme visual
         max_w = 620
-        max_h = 560
+        max_h = 520
         prod.thumbnail((max_w, max_h), resample)
 
-        x = (W - prod.width) // 2
-        y = 160 + (max_h - prod.height) // 2
+        canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
-        # sombra
+        x = (W - prod.width) // 2
+        y = max(70, (area_height - prod.height) // 2 + 20)
+
+        # sombra suave
         shadow = Image.new("RGBA", (prod.width, prod.height), (0, 0, 0, 0))
         shadow_draw = ImageDraw.Draw(shadow)
         shadow_draw.ellipse(
@@ -241,45 +262,57 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
             fill=(0, 0, 0, 105),
         )
         shadow = shadow.filter(ImageFilter.GaussianBlur(20))
-        canvas.paste(shadow, (x, y + 30), shadow)
+
+        canvas.paste(shadow, (x, y + 28), shadow)
         canvas.paste(prod, (x, y), prod)
 
         draw = ImageDraw.Draw(canvas)
 
-        # logo
+        # logo arriba derecha, con blanco transparente
         logo_path = os.path.join(STATIC_DIR, "logo.png")
         if os.path.exists(logo_path):
             try:
                 with Image.open(logo_path) as logo_raw:
-                    logo = logo_raw.convert("RGBA")
-                    logo.thumbnail((180, 60), resample)
-                    lx = W - logo.width - 26
-                    ly = 26
+                    logo = make_white_transparent(logo_raw)
+                    logo_width = int(W * 0.16)
+                    ratio = logo_width / logo.width
+                    logo_height = int(logo.height * ratio)
+                    logo = logo.resize((logo_width, logo_height), resample)
+
+                    lx = W - logo.width - 24
+                    ly = 20
                     canvas.paste(logo, (lx, ly), logo)
             except Exception as e:
                 print("ERROR LOGO:", e)
 
-        # texto
-        font_code = load_font(34)
-        font_desc = load_font(20)
+        # texto abajo centrado, estilo del main viejo
+        font_main = load_font(int(W * 0.04))
+        text = texto_completo.upper()
 
-        draw.text((50, 840), codigo, fill=(0, 0, 0), font=font_code)
+        text_box = draw.textbbox((0, 0), text, font=font_main)
+        text_width = text_box[2] - text_box[0]
+        text_height = text_box[3] - text_box[1]
 
-        desc_lines = wrap_text(draw, descripcion, font_desc, 900)[:2]
-        start_y = 890
-        for i, line in enumerate(desc_lines):
-            draw.text((50, start_y + (i * 28)), line, fill=(110, 110, 110), font=font_desc)
+        text_x = (W - text_width) // 2
+        text_y = area_height + ((footer_height - text_height) // 2) - 4
+
+        shadow_pos = (text_x + 2, text_y + 2)
+        draw.text(shadow_pos, text, fill=(0, 0, 0, 180), font=font_main)
+        draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font_main)
 
         canvas.save(output_path, "PNG", optimize=True)
 
-        # ================= THUMB =================
-        thumb_canvas = Image.new("RGBA", (700, 520), (255, 255, 255, 0))
+        # =========================
+        # THUMB WEB
+        # =========================
+        thumb_w, thumb_h = 700, 520
+        thumb_canvas = Image.new("RGBA", (thumb_w, thumb_h), (255, 255, 255, 0))
 
         thumb_prod = prod.copy()
-        thumb_prod.thumbnail((360, 280), resample)
+        thumb_prod.thumbnail((360, 260), resample)
 
-        tx = (700 - thumb_prod.width) // 2
-        ty = 58 + (250 - thumb_prod.height) // 2
+        tx = (thumb_w - thumb_prod.width) // 2
+        ty = 54 + (230 - thumb_prod.height) // 2
 
         thumb_shadow = Image.new("RGBA", (thumb_prod.width, thumb_prod.height), (0, 0, 0, 0))
         thumb_shadow_draw = ImageDraw.Draw(thumb_shadow)
@@ -293,6 +326,7 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
             fill=(0, 0, 0, 85),
         )
         thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(12))
+
         thumb_canvas.paste(thumb_shadow, (tx, ty + 18), thumb_shadow)
         thumb_canvas.paste(thumb_prod, (tx, ty), thumb_prod)
 
@@ -301,25 +335,28 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
         if os.path.exists(logo_path):
             try:
                 with Image.open(logo_path) as logo_small_raw:
-                    logo_small = logo_small_raw.convert("RGBA")
+                    logo_small = make_white_transparent(logo_small_raw)
                     logo_small.thumbnail((110, 34), resample)
-                    thumb_canvas.paste(logo_small, (700 - logo_small.width - 14, 14), logo_small)
+                    thumb_canvas.paste(logo_small, (thumb_w - logo_small.width - 14, 14), logo_small)
             except Exception:
                 pass
 
-        thumb_font_code = load_font(22)
-        thumb_font_desc = load_font(16)
+        thumb_font = load_font(22)
+        thumb_text = texto_completo.upper()
 
-        thumb_draw.text((24, 390), codigo, fill=(20, 20, 20), font=thumb_font_code)
+        thumb_text_box = thumb_draw.textbbox((0, 0), thumb_text, font=thumb_font)
+        thumb_text_w = thumb_text_box[2] - thumb_text_box[0]
+        thumb_text_h = thumb_text_box[3] - thumb_text_box[1]
 
-        thumb_desc_lines = wrap_text(thumb_draw, descripcion, thumb_font_desc, 650)[:2]
-        thumb_start_y = 424
-        for i, line in enumerate(thumb_desc_lines):
-            thumb_draw.text((24, thumb_start_y + (i * 22)), line, fill=(110, 110, 110), font=thumb_font_desc)
+        thumb_text_x = (thumb_w - thumb_text_w) // 2
+        thumb_text_y = 404
+
+        thumb_draw.text((thumb_text_x + 1, thumb_text_y + 1), thumb_text, fill=(0, 0, 0, 140), font=thumb_font)
+        thumb_draw.text((thumb_text_x, thumb_text_y), thumb_text, fill=(30, 30, 30), font=thumb_font)
 
         thumb_canvas.save(thumb_path, "PNG", optimize=True)
 
-        # liberar memoria
+        # cleanup
         prod.close()
         canvas.close()
         thumb_canvas.close()
@@ -347,7 +384,6 @@ def upload():
     if not files:
         return redirect(url_for("index"))
 
-    # En Render free conviene no mandar 10 enormes de golpe
     files = files[:5]
 
     conn = get_conn()
@@ -357,13 +393,16 @@ def upload():
             if not f or not f.filename:
                 continue
 
-            filename = secure_name(f.filename)
-            base_name = os.path.splitext(filename)[0]
+            original_name = secure_name(f.filename)
+            timestamp = int(time.time())
+            base_name = f"{os.path.splitext(original_name)[0]}_{timestamp}"
 
             upload_path = os.path.join(UPLOAD_DIR, f"{base_name}.jpg")
-            processed_path = os.path.join(PROCESSED_DIR, f"{base_name}.png")
-            thumb_name = f"thumb_{base_name}.png"
-            thumb_path = os.path.join(THUMBS_DIR, thumb_name)
+            processed_filename = f"proevo_{base_name}.png"
+            processed_path = os.path.join(PROCESSED_DIR, processed_filename)
+
+            thumb_filename = f"thumb_{base_name}.png"
+            thumb_path = os.path.join(THUMBS_DIR, thumb_filename)
 
             f.save(upload_path)
 
@@ -377,23 +416,22 @@ def upload():
             except Exception as e:
                 print("CLOUDINARY ERROR:", e)
 
-            codigo, descripcion = split_name(filename)
+            codigo, descripcion = split_name(original_name)
 
             conn.execute("""
                 INSERT INTO productos (nombre, codigo, descripcion, precio, imagen, thumb, url)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
-                f"{base_name}.png",
+                processed_filename,
                 codigo,
                 descripcion,
                 "",
-                f"{base_name}.png",
-                thumb_name,
+                processed_filename,
+                thumb_filename,
                 cloud_url
             ))
             conn.commit()
 
-            # borrar upload temporal para ahorrar disco/memoria
             if os.path.exists(upload_path):
                 try:
                     os.remove(upload_path)
@@ -479,4 +517,3 @@ def export_excel():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-    
