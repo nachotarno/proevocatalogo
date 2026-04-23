@@ -124,15 +124,16 @@ def downscale_before_removebg(local_path: str):
             img.save(local_path, format="JPEG", quality=85, optimize=True)
     except Exception as e:
         print("ERROR DOWNSCALE:", e)
+        raise
 
 # =========================
 # REMOVE BACKGROUND
 # =========================
 def remove_bg_file(local_path: str) -> bytes:
-    try:
-        if not REMOVE_BG_API_KEY:
-            raise Exception("Falta REMOVE_BG_API_KEY")
+    if not REMOVE_BG_API_KEY:
+        raise Exception("Falta configurar REMOVE_BG_API_KEY en Render.")
 
+    try:
         with open(local_path, "rb") as f:
             response = requests.post(
                 "https://api.remove.bg/v1.0/removebg",
@@ -169,7 +170,7 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     if bbox:
         prod = prod.crop(bbox)
 
-    # ----- Imagen final -----
+    # -------- Imagen final --------
     base_width = 1000
     area_height = 760
     footer_height = 170
@@ -205,16 +206,19 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
 
     logo_path = os.path.join(STATIC_DIR, "logo.png")
     if os.path.exists(logo_path):
-        with Image.open(logo_path) as logo_raw:
-            logo = make_white_transparent(logo_raw)
-            logo_width = int(W * 0.16)
-            ratio = logo_width / logo.width
-            logo_height = int(logo.height * ratio)
-            logo = logo.resize((logo_width, logo_height), resample)
+        try:
+            with Image.open(logo_path) as logo_raw:
+                logo = make_white_transparent(logo_raw)
+                logo_width = int(W * 0.16)
+                ratio = logo_width / logo.width
+                logo_height = int(logo.height * ratio)
+                logo = logo.resize((logo_width, logo_height), resample)
 
-            lx = W - logo.width - 24
-            ly = 20
-            canvas.paste(logo, (lx, ly), logo)
+                lx = W - logo.width - 24
+                ly = 20
+                canvas.paste(logo, (lx, ly), logo)
+        except Exception as e:
+            print("ERROR LOGO:", e)
 
     font_main = load_font(int(W * 0.04))
     text = texto_completo.upper()
@@ -231,7 +235,7 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
 
     canvas.save(output_path, "PNG", optimize=True)
 
-    # ----- Miniatura -----
+    # -------- Miniatura --------
     thumb_w, thumb_h = 700, 520
     thumb_canvas = Image.new("RGBA", (thumb_w, thumb_h), (255, 255, 255, 0))
 
@@ -260,10 +264,13 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     thumb_draw = ImageDraw.Draw(thumb_canvas)
 
     if os.path.exists(logo_path):
-        with Image.open(logo_path) as logo_small_raw:
-            logo_small = make_white_transparent(logo_small_raw)
-            logo_small.thumbnail((110, 34), resample)
-            thumb_canvas.paste(logo_small, (thumb_w - logo_small.width - 14, 14), logo_small)
+        try:
+            with Image.open(logo_path) as logo_small_raw:
+                logo_small = make_white_transparent(logo_small_raw)
+                logo_small.thumbnail((110, 34), resample)
+                thumb_canvas.paste(logo_small, (thumb_w - logo_small.width - 14, 14), logo_small)
+        except Exception:
+            pass
 
     thumb_font = load_font(22)
     thumb_text = texto_completo.upper()
