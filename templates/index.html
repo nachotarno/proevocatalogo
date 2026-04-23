@@ -55,16 +55,13 @@
                 <img src="{{ url_for('static', filename='logo.png') }}" alt="PROEVO" class="h-10 object-contain">
                 <div>
                     <h1 class="text-2xl font-black tracking-tight">CATÁLOGO DE REPUESTOS</h1>
-                    <p class="text-zinc-400 text-sm">Procesamiento automático y exportación con imágenes</p>
+                    <p class="text-zinc-400 text-sm">Procesamiento automático y catálogo web</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap gap-3">
                 <a href="/export-excel" class="px-5 py-3 rounded-xl bg-green-600 hover:bg-green-500 transition font-bold">
                     Exportar Excel
-                </a>
-                <a href="/export-pdf" class="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 transition font-bold">
-                    Exportar PDF
                 </a>
             </div>
         </div>
@@ -76,13 +73,19 @@
             <section class="panel rounded-2xl p-4">
                 <h2 class="text-2xl font-black mb-4">SUBIR IMÁGENES</h2>
 
+                {% if error %}
+                <div class="mb-4 rounded-xl bg-red-900/40 border border-red-700 px-4 py-3 text-red-200 text-sm">
+                    {{ error }}
+                </div>
+                {% endif %}
+
                 <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-4">
                     <label class="block border border-dashed border-white/15 rounded-2xl p-6 text-center cursor-pointer hover:border-yellow-400 transition">
                         <input type="file" name="file" multiple class="hidden" onchange="updateFileNames(this)">
                         <div class="text-5xl mb-3">⤴</div>
                         <p class="text-lg font-semibold">Arrastrá imágenes aquí</p>
                         <p class="text-zinc-400">o hacé click para seleccionar</p>
-                        <p class="text-sm text-zinc-500 mt-4">JPG, PNG, WEBP · hasta 3 archivos</p>
+                        <p class="text-sm text-zinc-500 mt-4">JPG, PNG, WEBP · hasta 2 archivos</p>
                     </label>
 
                     <div id="selectedFiles" class="text-sm text-zinc-400 min-h-[20px] max-h-[140px] overflow-auto"></div>
@@ -91,15 +94,10 @@
                         SUBIR Y PROCESAR
                     </button>
                 </form>
-
-                <p class="text-xs text-zinc-500 mt-3">
-                    En Render conviene subir pocas imágenes por vez para evitar errores de memoria.
-                </p>
             </section>
 
             <section class="panel rounded-2xl p-4">
                 <h3 class="text-xl font-black mb-4">ESTADÍSTICAS</h3>
-
                 <div class="space-y-3 text-sm">
                     <div class="flex justify-between">
                         <span class="text-zinc-400">Total productos</span>
