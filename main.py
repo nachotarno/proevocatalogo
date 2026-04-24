@@ -25,6 +25,8 @@ os.makedirs(THUMBS_DIR, exist_ok=True)
 REMOVE_BG_API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
+NANO_MODEL = "gemini-3.1-flash-image-preview"
+
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -105,8 +107,20 @@ def make_white_transparent(image):
     image = image.convert("RGBA")
     pixels = []
     for r, g, b, a in image.getdata():
-        if r > 235 and g > 235 and b > 235:
+        if r > 245 and g > 245 and b > 245:
             pixels.append((255, 255, 255, 0))
+        else:
+            pixels.append((r, g, b, a))
+    image.putdata(pixels)
+    return image
+
+
+def make_magenta_transparent(image):
+    image = image.convert("RGBA")
+    pixels = []
+    for r, g, b, a in image.getdata():
+        if r > 200 and g < 80 and b > 200:
+            pixels.append((255, 0, 255, 0))
         else:
             pixels.append((r, g, b, a))
     image.putdata(pixels)
@@ -161,6 +175,28 @@ def remove_bg_removebg(local_path):
     raise Exception(f"remove.bg falló: {msg}")
 
 
+def extract_gemini_image_bytes(response):
+    if hasattr(response, "candidates") and response.candidates:
+        for candidate in response.candidates:
+            if candidate.content and candidate.content.parts:
+                for part in candidate.content.parts:
+                    if getattr(part, "inline_data", None) and part.inline_data.data:
+                        return part.inline_data.data
+
+    if hasattr(response, "parts"):
+        for part in response.parts:
+            try:
+                img = part.as_image()
+                if img:
+                    out = io.BytesIO()
+                    img.save(out, format="PNG")
+                    return out.getvalue()
+            except Exception:
+                pass
+
+    raise Exception("Nano Banana no devolvió imagen.")
+
+
 def remove_bg_nanobanana(local_path):
     if not GEMINI_API_KEY:
         raise Exception("Falta GEMINI_API_KEY.")
@@ -171,15 +207,18 @@ def remove_bg_nanobanana(local_path):
         image_bytes = f.read()
 
     prompt = """
-Remove the background from this product photo.
-Keep only the physical mechanical spare part.
-Remove table, cutting mat, labels, hands, floor, wall, and all background.
-Do not change the product shape, holes, screws, color, rust, scratches, or proportions.
-Return one clean centered product image on a pure white background.
+Edit this product photo for ecommerce.
+
+Keep only the real mechanical spare part/product.
+Remove the full background: table, green cutting mat, hands, labels, floor, wall, shadows, and any non-product object.
+Do not change the product shape, holes, screws, color, rust, scratches, marks, or proportions.
+Place the isolated product centered on a pure solid magenta background (#FF00FF).
+No text. No logo. No new objects. No frame. No decoration.
+Return one clean realistic product image.
 """
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash-image",
+        model=NANO_MODEL,
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             prompt,
@@ -189,14 +228,7 @@ Return one clean centered product image on a pure white background.
         ),
     )
 
-    if not response.candidates:
-        raise Exception("Nano Banana no devolvió candidatos.")
-
-    for part in response.candidates[0].content.parts:
-        if getattr(part, "inline_data", None) and part.inline_data.data:
-            return part.inline_data.data
-
-    raise Exception("Nano Banana no devolvió imagen.")
+    return extract_gemini_image_bytes(response)
 
 
 def remove_bg_hibrido(local_path):
@@ -214,12 +246,20 @@ def remove_bg_hibrido(local_path):
     try:
         print("Intentando Nano Banana...")
         data = remove_bg_nanobanana(local_path)
+
         img = Image.open(io.BytesIO(data)).convert("RGBA")
+
+        # Nano Banana no siempre devuelve alfa real.
+        # Por eso pedimos fondo magenta y lo convertimos a transparente.
+        img = make_magenta_transparent(img)
         img = make_white_transparent(img)
+
         out = io.BytesIO()
         img.save(out, format="PNG")
+
         print("Nano Banana OK")
         return out.getvalue(), "nano-banana"
+
     except Exception as e:
         print("Nano Banana falló:", e)
         errores.append(str(e))
@@ -239,7 +279,9 @@ def process_catalog_image(input_path, output_path, thumb_path):
     with Image.open(io.BytesIO(image_bytes)) as raw:
         prod = ImageOps.exif_transpose(raw).convert("RGBA")
 
+    prod = make_magenta_transparent(prod)
     prod = make_white_transparent(prod)
+
     validate_background_removed(prod)
 
     bbox = prod.getbbox()
@@ -451,7 +493,14 @@ def export_excel():
     conn.close()
 
     for p in productos:
-        ws.append([p["codigo"], p["descripcion"], p["precio"], p["imagen"], p["thumb"], p["motor"]])
+        ws.append([
+            p["codigo"],
+            p["descripcion"],
+            p["precio"],
+            p["imagen"],
+            p["thumb"],
+            p["motor"],
+        ])
 
     excel_path = os.path.join(BASE_DIR, "catalogo.xlsx")
     wb.save(excel_path)
