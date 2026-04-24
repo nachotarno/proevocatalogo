@@ -1,23 +1,16 @@
 from flask import Flask, render_template, request, send_file, redirect, url_for
-import os
-import io
-import gc
-import time
-import sqlite3
-import requests
+import os, io, gc, time, sqlite3, requests
 
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageFont
 from werkzeug.utils import secure_filename
 from openpyxl import Workbook
 
 from google import genai
+from google.genai import types
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
-# =========================
-# PATHS
-# =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 UPLOAD_DIR = os.path.join(STATIC_DIR, "uploads")
@@ -32,17 +25,18 @@ os.makedirs(THUMBS_DIR, exist_ok=True)
 REMOVE_BG_API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-# =========================
-# DB
-# =========================
+
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db():
     conn = get_conn()
-    conn.execute("""
+    c = conn.cursor()
+
+    c.execute("""
         CREATE TABLE IF NOT EXISTS productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
@@ -54,31 +48,35 @@ def init_db():
             motor TEXT DEFAULT ''
         )
     """)
+
+    cols = [row[1] for row in c.execute("PRAGMA table_info(productos)").fetchall()]
+    if "motor" not in cols:
+        c.execute("ALTER TABLE productos ADD COLUMN motor TEXT DEFAULT ''")
+
     conn.commit()
     conn.close()
 
+
 init_db()
 
-# =========================
-# HELPERS
-# =========================
+
 def cleanup_memory():
     gc.collect()
 
-def secure_name(filename: str) -> str:
+
+def secure_name(filename):
     return secure_filename(filename).replace(" ", "_")
 
-def split_name(filename: str):
-    base = os.path.splitext(filename)[0]
-    base = base.replace("_-_", " ")
-    base = base.replace("_", " ")
-    base = base.replace("-", " ")
-    base = " ".join(base.split()).upper()
 
+def split_name(filename):
+    base = os.path.splitext(filename)[0]
+    base = base.replace("_-_", " ").replace("_", " ").replace("-", " ")
+    base = " ".join(base.split()).upper()
     parts = base.split(" ", 1)
     codigo = parts[0] if parts else ""
     descripcion = parts[1] if len(parts) > 1 else ""
     return codigo, descripcion
+
 
 def get_resample():
     try:
@@ -86,79 +84,59 @@ def get_resample():
     except AttributeError:
         return Image.LANCZOS
 
-def load_font(size: int):
+
+def load_font(size):
     candidates = [
         os.path.join(BASE_DIR, "arial.ttf"),
         os.path.join(STATIC_DIR, "arial.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
-
     for p in candidates:
         if os.path.exists(p):
             try:
                 return ImageFont.truetype(p, size)
             except Exception:
                 pass
-
     return ImageFont.load_default()
+
 
 def make_white_transparent(image):
     image = image.convert("RGBA")
     pixels = []
-
     for r, g, b, a in image.getdata():
         if r > 235 and g > 235 and b > 235:
             pixels.append((255, 255, 255, 0))
         else:
             pixels.append((r, g, b, a))
-
     image.putdata(pixels)
     return image
 
-def downscale_before_processing(local_path: str):
-    try:
-        resample = get_resample()
 
-        with Image.open(local_path) as img:
-            img = ImageOps.exif_transpose(img)
+def downscale_before_processing(local_path):
+    resample = get_resample()
+    with Image.open(local_path) as img:
+        img = ImageOps.exif_transpose(img)
+        if max(img.size) > 1200:
+            img.thumbnail((1200, 1200), resample)
+        img = img.convert("RGB")
+        img.save(local_path, format="JPEG", quality=82, optimize=True)
 
-            max_side = 1200
-            if max(img.size) > max_side:
-                img.thumbnail((max_side, max_side), resample)
 
-            img = img.convert("RGB")
-            img.save(local_path, format="JPEG", quality=82, optimize=True)
-
-    except Exception as e:
-        raise Exception(f"No se pudo preparar la imagen: {e}")
-
-def validate_background_removed(img: Image.Image):
+def validate_background_removed(img):
     if img.mode != "RGBA":
         raise Exception("La imagen no tiene transparencia.")
 
     alpha = img.getchannel("A")
-    bbox = alpha.getbbox()
-
-    if bbox is None:
-        raise Exception("La imagen procesada quedó vacía.")
-
-    total_pixels = img.width * img.height
-    transparent_pixels = 0
-
-    for value in alpha.getdata():
-        if value < 250:
-            transparent_pixels += 1
-
-    ratio = transparent_pixels / total_pixels if total_pixels else 0
+    total = img.width * img.height
+    transparent = sum(1 for v in alpha.getdata() if v < 250)
+    ratio = transparent / total if total else 0
 
     if ratio < 0.03:
         raise Exception("No se detectó suficiente transparencia.")
 
-# =========================
-# REMOVE.BG
-# =========================
-def remove_bg_removebg(local_path: str) -> bytes:
+
+def remove_bg_removebg(local_path):
     if not REMOVE_BG_API_KEY:
         raise Exception("Falta REMOVE_BG_API_KEY.")
 
@@ -168,7 +146,7 @@ def remove_bg_removebg(local_path: str) -> bytes:
             files={"image_file": f},
             data={"size": "auto"},
             headers={"X-Api-Key": REMOVE_BG_API_KEY},
-            timeout=60
+            timeout=60,
         )
 
     if response.status_code == 200:
@@ -182,47 +160,46 @@ def remove_bg_removebg(local_path: str) -> bytes:
 
     raise Exception(f"remove.bg falló: {msg}")
 
-# =========================
-# NANO BANANA / GEMINI
-# =========================
-def remove_bg_nanobanana(local_path: str) -> bytes:
+
+def remove_bg_nanobanana(local_path):
     if not GEMINI_API_KEY:
         raise Exception("Falta GEMINI_API_KEY.")
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    prompt = """
-Edit this product photo.
+    with open(local_path, "rb") as f:
+        image_bytes = f.read()
 
-Keep ONLY the physical mechanical spare part/product.
-Remove the entire background completely.
-Do not include the table, cutting mat, hands, labels, floor, wall, or any background object.
-Return a clean product cutout isolated on a pure white background.
-Do not add new objects.
-Do not change the product shape, color, text, holes, bolts, scratches, rust marks, or proportions.
-Keep the product realistic and centered.
+    prompt = """
+Remove the background from this product photo.
+Keep only the physical mechanical spare part.
+Remove table, cutting mat, labels, hands, floor, wall, and all background.
+Do not change the product shape, holes, screws, color, rust, scratches, or proportions.
+Return one clean centered product image on a pure white background.
 """
 
-    image_input = Image.open(local_path)
-
     response = client.models.generate_content(
-        model="gemini-3.1-flash-image-preview",
-        contents=[prompt, image_input],
+        model="gemini-2.5-flash-image",
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            prompt,
+        ],
+        config=types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"]
+        ),
     )
 
-    for part in response.parts:
-        try:
-            generated = part.as_image()
-            if generated:
-                out = io.BytesIO()
-                generated.save(out, format="PNG")
-                return out.getvalue()
-        except Exception:
-            pass
+    if not response.candidates:
+        raise Exception("Nano Banana no devolvió candidatos.")
+
+    for part in response.candidates[0].content.parts:
+        if getattr(part, "inline_data", None) and part.inline_data.data:
+            return part.inline_data.data
 
     raise Exception("Nano Banana no devolvió imagen.")
 
-def remove_bg_hibrido(local_path: str):
+
+def remove_bg_hibrido(local_path):
     errores = []
 
     try:
@@ -232,34 +209,28 @@ def remove_bg_hibrido(local_path: str):
         return data, "remove.bg"
     except Exception as e:
         print("remove.bg falló:", e)
-        errores.append(f"remove.bg: {e}")
+        errores.append(str(e))
 
     try:
         print("Intentando Nano Banana...")
         data = remove_bg_nanobanana(local_path)
-        print("Nano Banana OK")
-
-        # Nano Banana puede devolver fondo blanco, lo pasamos a transparente
         img = Image.open(io.BytesIO(data)).convert("RGBA")
         img = make_white_transparent(img)
-
         out = io.BytesIO()
         img.save(out, format="PNG")
+        print("Nano Banana OK")
         return out.getvalue(), "nano-banana"
-
     except Exception as e:
         print("Nano Banana falló:", e)
-        errores.append(f"nano-banana: {e}")
+        errores.append(str(e))
 
     raise Exception(" | ".join(errores))
 
-# =========================
-# IMAGE PROCESSING
-# =========================
-def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
+
+def process_catalog_image(input_path, output_path, thumb_path):
     resample = get_resample()
     codigo, descripcion = split_name(os.path.basename(input_path))
-    texto_completo = f"{codigo} {descripcion}".strip()
+    texto = f"{codigo} {descripcion}".strip().upper()
 
     downscale_before_processing(input_path)
 
@@ -268,25 +239,19 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     with Image.open(io.BytesIO(image_bytes)) as raw:
         prod = ImageOps.exif_transpose(raw).convert("RGBA")
 
-    # Si Nano Banana devolvió blanco, intentamos convertirlo otra vez.
     prod = make_white_transparent(prod)
-
     validate_background_removed(prod)
 
     bbox = prod.getbbox()
     if bbox:
         prod = prod.crop(bbox)
 
-    # -------- Imagen final --------
-    base_width = 1000
+    W = 1000
     area_height = 760
     footer_height = 170
-    W = base_width
     H = area_height + footer_height
 
-    max_w = 620
-    max_h = 520
-    prod.thumbnail((max_w, max_h), resample)
+    prod.thumbnail((620, 520), resample)
 
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
@@ -294,8 +259,8 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     y = max(70, (area_height - prod.height) // 2 + 20)
 
     shadow = Image.new("RGBA", (prod.width, prod.height), (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow)
-    shadow_draw.ellipse(
+    sd = ImageDraw.Draw(shadow)
+    sd.ellipse(
         (
             int(prod.width * 0.20),
             int(prod.height * 0.82),
@@ -320,92 +285,36 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
                 ratio = logo_width / logo.width
                 logo_height = int(logo.height * ratio)
                 logo = logo.resize((logo_width, logo_height), resample)
-
-                lx = W - logo.width - 24
-                ly = 20
-                canvas.paste(logo, (lx, ly), logo)
+                canvas.paste(logo, (W - logo.width - 24, 20), logo)
         except Exception as e:
             print("ERROR LOGO:", e)
 
     font_main = load_font(int(W * 0.04))
-    text = texto_completo.upper()
+    box = draw.textbbox((0, 0), texto, font=font_main)
+    tw = box[2] - box[0]
+    th = box[3] - box[1]
 
-    text_box = draw.textbbox((0, 0), text, font=font_main)
-    text_width = text_box[2] - text_box[0]
-    text_height = text_box[3] - text_box[1]
+    tx = (W - tw) // 2
+    ty = area_height + ((footer_height - th) // 2) - 4
 
-    text_x = (W - text_width) // 2
-    text_y = area_height + ((footer_height - text_height) // 2) - 4
-
-    draw.text((text_x + 2, text_y + 2), text, fill=(0, 0, 0, 180), font=font_main)
-    draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font_main)
+    draw.text((tx + 2, ty + 2), texto, fill=(0, 0, 0, 180), font=font_main)
+    draw.text((tx, ty), texto, fill=(255, 255, 255, 255), font=font_main)
 
     canvas.save(output_path, "PNG", optimize=True)
 
-    # -------- Miniatura --------
-    thumb_w = 700
-    thumb_h = 520
-    thumb_canvas = Image.new("RGBA", (thumb_w, thumb_h), (255, 255, 255, 0))
-
-    thumb_prod = prod.copy()
-    thumb_prod.thumbnail((360, 260), resample)
-
-    tx = (thumb_w - thumb_prod.width) // 2
-    ty = 54 + (230 - thumb_prod.height) // 2
-
-    thumb_shadow = Image.new("RGBA", (thumb_prod.width, thumb_prod.height), (0, 0, 0, 0))
-    thumb_shadow_draw = ImageDraw.Draw(thumb_shadow)
-    thumb_shadow_draw.ellipse(
-        (
-            int(thumb_prod.width * 0.20),
-            int(thumb_prod.height * 0.82),
-            int(thumb_prod.width * 0.80),
-            int(thumb_prod.height * 0.96),
-        ),
-        fill=(0, 0, 0, 85),
-    )
-    thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(10))
-
-    thumb_canvas.paste(thumb_shadow, (tx, ty + 16), thumb_shadow)
-    thumb_canvas.paste(thumb_prod, (tx, ty), thumb_prod)
-
-    thumb_draw = ImageDraw.Draw(thumb_canvas)
-
-    if os.path.exists(logo_path):
-        try:
-            with Image.open(logo_path) as logo_small_raw:
-                logo_small = make_white_transparent(logo_small_raw)
-                logo_small.thumbnail((110, 34), resample)
-                thumb_canvas.paste(logo_small, (thumb_w - logo_small.width - 14, 14), logo_small)
-        except Exception:
-            pass
-
-    thumb_font = load_font(22)
-    thumb_text = texto_completo.upper()
-
-    thumb_text_box = thumb_draw.textbbox((0, 0), thumb_text, font=thumb_font)
-    thumb_text_w = thumb_text_box[2] - thumb_text_box[0]
-
-    thumb_text_x = (thumb_w - thumb_text_w) // 2
-    thumb_text_y = 404
-
-    thumb_draw.text((thumb_text_x + 1, thumb_text_y + 1), thumb_text, fill=(0, 0, 0, 140), font=thumb_font)
-    thumb_draw.text((thumb_text_x, thumb_text_y), thumb_text, fill=(30, 30, 30), font=thumb_font)
-
-    thumb_canvas.save(thumb_path, "PNG", optimize=True)
+    thumb = canvas.copy()
+    thumb.thumbnail((700, 520), resample)
+    thumb.save(thumb_path, "PNG", optimize=True)
 
     prod.close()
     canvas.close()
-    thumb_canvas.close()
+    thumb.close()
     shadow.close()
-    thumb_shadow.close()
     cleanup_memory()
 
     return motor
 
-# =========================
-# ROUTES
-# =========================
+
 @app.route("/")
 def index():
     conn = get_conn()
@@ -413,17 +322,17 @@ def index():
     conn.close()
     return render_template("index.html", productos=productos, error="")
 
+
 @app.route("/upload", methods=["POST"])
 def upload():
     files = request.files.getlist("file")
     if not files:
         return redirect(url_for("index"))
 
-    files = files[:1]
     conn = get_conn()
 
     try:
-        for f in files:
+        for f in files[:1]:
             if not f or not f.filename:
                 continue
 
@@ -439,6 +348,7 @@ def upload():
             thumb_path = os.path.join(THUMBS_DIR, thumb_filename)
 
             f.save(upload_path)
+
             motor = process_catalog_image(upload_path, processed_path, thumb_path)
 
             codigo, descripcion = split_name(original_name)
@@ -453,7 +363,7 @@ def upload():
                 "",
                 processed_filename,
                 thumb_filename,
-                motor
+                motor,
             ))
             conn.commit()
 
@@ -467,11 +377,11 @@ def upload():
         print("ERROR EN UPLOAD:", e)
 
         try:
-            if 'upload_path' in locals() and os.path.exists(upload_path):
+            if "upload_path" in locals() and os.path.exists(upload_path):
                 os.remove(upload_path)
-            if 'processed_path' in locals() and os.path.exists(processed_path):
+            if "processed_path" in locals() and os.path.exists(processed_path):
                 os.remove(processed_path)
-            if 'thumb_path' in locals() and os.path.exists(thumb_path):
+            if "thumb_path" in locals() and os.path.exists(thumb_path):
                 os.remove(thumb_path)
         except Exception:
             pass
@@ -481,11 +391,13 @@ def upload():
         conn2 = get_conn()
         productos = conn2.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
         conn2.close()
+
         return render_template(
             "index.html",
             productos=productos,
-            error=f"No se pudo procesar la imagen: {e}"
+            error=f"No se pudo procesar la imagen: {e}",
         )
+
 
 @app.route("/precio/<int:item_id>", methods=["POST"])
 def actualizar_precio(item_id):
@@ -496,12 +408,14 @@ def actualizar_precio(item_id):
     conn.close()
     return redirect(url_for("index"))
 
+
 @app.route("/download/<filename>")
 def download(filename):
     path = os.path.join(PROCESSED_DIR, filename)
     if not os.path.exists(path):
         return redirect(url_for("index"))
     return send_file(path, as_attachment=True, download_name=filename)
+
 
 @app.route("/delete/<int:item_id>")
 def delete(item_id):
@@ -524,6 +438,7 @@ def delete(item_id):
     conn.close()
     return redirect(url_for("index"))
 
+
 @app.route("/export-excel")
 def export_excel():
     wb = Workbook()
@@ -541,6 +456,7 @@ def export_excel():
     excel_path = os.path.join(BASE_DIR, "catalogo.xlsx")
     wb.save(excel_path)
     return send_file(excel_path, as_attachment=True)
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
