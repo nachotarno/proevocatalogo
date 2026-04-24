@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageFont
 from werkzeug.utils import secure_filename
 from openpyxl import Workbook
 
+from google import genai
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB
 
@@ -28,6 +30,7 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(THUMBS_DIR, exist_ok=True)
 
 REMOVE_BG_API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # =========================
 # DB
@@ -47,7 +50,8 @@ def init_db():
             descripcion TEXT,
             precio TEXT DEFAULT '',
             imagen TEXT NOT NULL,
-            thumb TEXT DEFAULT ''
+            thumb TEXT DEFAULT '',
+            motor TEXT DEFAULT ''
         )
     """)
     conn.commit()
@@ -89,30 +93,33 @@ def load_font(size: int):
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
+
     for p in candidates:
         if os.path.exists(p):
             try:
                 return ImageFont.truetype(p, size)
             except Exception:
                 pass
+
     return ImageFont.load_default()
 
 def make_white_transparent(image):
     image = image.convert("RGBA")
     pixels = []
 
-    for red, green, blue, alpha in image.getdata():
-        if red > 235 and green > 235 and blue > 235:
+    for r, g, b, a in image.getdata():
+        if r > 235 and g > 235 and b > 235:
             pixels.append((255, 255, 255, 0))
         else:
-            pixels.append((red, green, blue, alpha))
+            pixels.append((r, g, b, a))
 
     image.putdata(pixels)
     return image
 
-def downscale_before_removebg(local_path: str):
+def downscale_before_processing(local_path: str):
     try:
         resample = get_resample()
+
         with Image.open(local_path) as img:
             img = ImageOps.exif_transpose(img)
 
@@ -122,46 +129,13 @@ def downscale_before_removebg(local_path: str):
 
             img = img.convert("RGB")
             img.save(local_path, format="JPEG", quality=82, optimize=True)
+
     except Exception as e:
         raise Exception(f"No se pudo preparar la imagen: {e}")
 
-# =========================
-# REMOVE BACKGROUND
-# =========================
-def remove_bg_file(local_path: str) -> bytes:
-    if not REMOVE_BG_API_KEY:
-        raise Exception("Falta configurar REMOVE_BG_API_KEY en Render.")
-
-    try:
-        with open(local_path, "rb") as f:
-            response = requests.post(
-                "https://api.remove.bg/v1.0/removebg",
-                files={"image_file": f},
-                data={"size": "auto"},
-                headers={"X-Api-Key": REMOVE_BG_API_KEY},
-                timeout=60
-            )
-
-        if response.status_code == 200:
-            return response.content
-
-        try:
-            error_json = response.json()
-            msg = error_json.get("errors", [{}])[0].get("title", response.text)
-        except Exception:
-            msg = response.text
-
-        raise Exception(f"remove.bg falló: {msg}")
-
-    except requests.RequestException as e:
-        raise Exception(f"No se pudo conectar con remove.bg: {e}")
-
-# =========================
-# VALIDAR TRANSPARENCIA
-# =========================
 def validate_background_removed(img: Image.Image):
     if img.mode != "RGBA":
-        raise Exception("remove.bg no devolvió una imagen con transparencia.")
+        raise Exception("La imagen no tiene transparencia.")
 
     alpha = img.getchannel("A")
     bbox = alpha.getbbox()
@@ -178,8 +152,106 @@ def validate_background_removed(img: Image.Image):
 
     ratio = transparent_pixels / total_pixels if total_pixels else 0
 
-    if ratio < 0.05:
-        raise Exception("No se detectó suficiente transparencia. El fondo no fue extraído correctamente.")
+    if ratio < 0.03:
+        raise Exception("No se detectó suficiente transparencia.")
+
+# =========================
+# REMOVE.BG
+# =========================
+def remove_bg_removebg(local_path: str) -> bytes:
+    if not REMOVE_BG_API_KEY:
+        raise Exception("Falta REMOVE_BG_API_KEY.")
+
+    with open(local_path, "rb") as f:
+        response = requests.post(
+            "https://api.remove.bg/v1.0/removebg",
+            files={"image_file": f},
+            data={"size": "auto"},
+            headers={"X-Api-Key": REMOVE_BG_API_KEY},
+            timeout=60
+        )
+
+    if response.status_code == 200:
+        return response.content
+
+    try:
+        error_json = response.json()
+        msg = error_json.get("errors", [{}])[0].get("title", response.text)
+    except Exception:
+        msg = response.text
+
+    raise Exception(f"remove.bg falló: {msg}")
+
+# =========================
+# NANO BANANA / GEMINI
+# =========================
+def remove_bg_nanobanana(local_path: str) -> bytes:
+    if not GEMINI_API_KEY:
+        raise Exception("Falta GEMINI_API_KEY.")
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    prompt = """
+Edit this product photo.
+
+Keep ONLY the physical mechanical spare part/product.
+Remove the entire background completely.
+Do not include the table, cutting mat, hands, labels, floor, wall, or any background object.
+Return a clean product cutout isolated on a pure white background.
+Do not add new objects.
+Do not change the product shape, color, text, holes, bolts, scratches, rust marks, or proportions.
+Keep the product realistic and centered.
+"""
+
+    image_input = Image.open(local_path)
+
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-image-preview",
+        contents=[prompt, image_input],
+    )
+
+    for part in response.parts:
+        try:
+            generated = part.as_image()
+            if generated:
+                out = io.BytesIO()
+                generated.save(out, format="PNG")
+                return out.getvalue()
+        except Exception:
+            pass
+
+    raise Exception("Nano Banana no devolvió imagen.")
+
+def remove_bg_hibrido(local_path: str):
+    errores = []
+
+    try:
+        print("Intentando remove.bg...")
+        data = remove_bg_removebg(local_path)
+        print("remove.bg OK")
+        return data, "remove.bg"
+    except Exception as e:
+        print("remove.bg falló:", e)
+        errores.append(f"remove.bg: {e}")
+
+    try:
+        print("Intentando Nano Banana...")
+        data = remove_bg_nanobanana(local_path)
+        print("Nano Banana OK")
+
+        # Nano Banana puede devolver fondo blanco, lo pasamos a transparente
+        img = Image.open(io.BytesIO(data)).convert("RGBA")
+        img = make_white_transparent(img)
+
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue(), "nano-banana"
+
+    except Exception as e:
+        print("Nano Banana falló:", e)
+        errores.append(f"nano-banana: {e}")
+
+    raise Exception(" | ".join(errores))
 
 # =========================
 # IMAGE PROCESSING
@@ -189,11 +261,15 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     codigo, descripcion = split_name(os.path.basename(input_path))
     texto_completo = f"{codigo} {descripcion}".strip()
 
-    downscale_before_removebg(input_path)
-    image_bytes = remove_bg_file(input_path)
+    downscale_before_processing(input_path)
+
+    image_bytes, motor = remove_bg_hibrido(input_path)
 
     with Image.open(io.BytesIO(image_bytes)) as raw:
         prod = ImageOps.exif_transpose(raw).convert("RGBA")
+
+    # Si Nano Banana devolvió blanco, intentamos convertirlo otra vez.
+    prod = make_white_transparent(prod)
 
     validate_background_removed(prod)
 
@@ -291,7 +367,7 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     thumb_shadow = thumb_shadow.filter(ImageFilter.GaussianBlur(10))
 
     thumb_canvas.paste(thumb_shadow, (tx, ty + 16), thumb_shadow)
-    thumb_canvas.paste(thumb_prod, (tx, ty), prod)
+    thumb_canvas.paste(thumb_prod, (tx, ty), thumb_prod)
 
     thumb_draw = ImageDraw.Draw(thumb_canvas)
 
@@ -325,6 +401,8 @@ def process_catalog_image(input_path: str, output_path: str, thumb_path: str):
     thumb_shadow.close()
     cleanup_memory()
 
+    return motor
+
 # =========================
 # ROUTES
 # =========================
@@ -341,7 +419,7 @@ def upload():
     if not files:
         return redirect(url_for("index"))
 
-    files = files[:1]  # en Render free: 1 por vez
+    files = files[:1]
     conn = get_conn()
 
     try:
@@ -361,20 +439,21 @@ def upload():
             thumb_path = os.path.join(THUMBS_DIR, thumb_filename)
 
             f.save(upload_path)
-            process_catalog_image(upload_path, processed_path, thumb_path)
+            motor = process_catalog_image(upload_path, processed_path, thumb_path)
 
             codigo, descripcion = split_name(original_name)
 
             conn.execute("""
-                INSERT INTO productos (nombre, codigo, descripcion, precio, imagen, thumb)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO productos (nombre, codigo, descripcion, precio, imagen, thumb, motor)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 processed_filename,
                 codigo,
                 descripcion,
                 "",
                 processed_filename,
-                thumb_filename
+                thumb_filename,
+                motor
             ))
             conn.commit()
 
@@ -450,14 +529,14 @@ def export_excel():
     wb = Workbook()
     ws = wb.active
     ws.title = "Catalogo"
-    ws.append(["CODIGO", "DESCRIPCION", "PRECIO", "IMAGEN", "MINIATURA"])
+    ws.append(["CODIGO", "DESCRIPCION", "PRECIO", "IMAGEN", "MINIATURA", "MOTOR"])
 
     conn = get_conn()
     productos = conn.execute("SELECT * FROM productos ORDER BY id DESC").fetchall()
     conn.close()
 
     for p in productos:
-        ws.append([p["codigo"], p["descripcion"], p["precio"], p["imagen"], p["thumb"]])
+        ws.append([p["codigo"], p["descripcion"], p["precio"], p["imagen"], p["thumb"], p["motor"]])
 
     excel_path = os.path.join(BASE_DIR, "catalogo.xlsx")
     wb.save(excel_path)
