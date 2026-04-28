@@ -1,6 +1,5 @@
 flask
-pillow
 gunicorn
-openpyxl
+pillow
 rembg
 onnxruntime
