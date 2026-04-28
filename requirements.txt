@@ -2,4 +2,5 @@ flask
 pillow
 gunicorn
 openpyxl
-google-genai
+rembg
+onnxruntime
